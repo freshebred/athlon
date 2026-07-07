@@ -13,8 +13,9 @@ const AuthPage = {
   _render() {
     return `
       <div class="auth-page">
-        <div class="auth-logo">
-          <span style="color:var(--accent)">A</span>THLON
+        <div class="auth-logo" style="display: flex; flex-direction: column; align-items: center;">
+          <img src="/icons/icon.svg" alt="Athlon Logo" style="width: 48px; height: 48px; margin-bottom: 12px; border-radius: 12px;">
+          <div><span style="color:var(--accent)">A</span>THLON</div>
         </div>
         <p class="auth-tagline">Your AI-powered calorie bank</p>
 
@@ -83,8 +84,13 @@ const AuthPage = {
         </div>
 
         <p style="margin-top:24px; font-size:0.75rem; color:var(--text-3); text-align:center; max-width:300px;">
-          By continuing, you agree to Athlon's Terms of Service and Privacy Policy.
+          By continuing, you agree to Athlon's <a href="/tos.html" style="color:var(--accent); text-decoration:underline;">Terms of Service</a> and <a href="/privacy.html" style="color:var(--accent); text-decoration:underline;">Privacy Policy</a>.
         </p>
+
+        <div style="margin-top: 32px; font-size: 0.75rem; color: var(--text-3); text-align: center;">
+          Made with ❤️ by <a href="https://portfolio.hgphnm.com" target="_blank" style="color:var(--text-2); font-weight:600; text-decoration:none;">Freshebred</a><br>
+          <span style="opacity: 0.8; font-size: 0.7rem;">(and his beloved Gemini)</span>
+        </div>
       </div>
     `;
   },

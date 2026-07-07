@@ -162,6 +162,15 @@ const ProfilePage = {
             <i data-lucide="log-out" class="icon-sm"></i> Sign Out
           </button>
         </div>
+
+        <div style="margin-top: 32px; font-size: 0.75rem; color: var(--text-3); text-align: center; padding-bottom: 32px;">
+          <div style="margin-bottom: 8px;">
+            <a href="/tos.html" style="color:var(--text-3); text-decoration:underline; margin-right: 12px;">Terms of Service</a>
+            <a href="/privacy.html" style="color:var(--text-3); text-decoration:underline;">Privacy Policy</a>
+          </div>
+          Made with ❤️ by <a href="https://portfolio.hgphnm.com" target="_blank" style="color:var(--text-2); font-weight:600; text-decoration:none;">Freshebred</a><br>
+          <span style="opacity: 0.8; font-size: 0.7rem;">(and his beloved Gemini)</span>
+        </div>
       </div>
     `;
   },
