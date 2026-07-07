@@ -120,4 +120,139 @@ router.post('/send-test', requireAuth, async (req, res) => {
   }
 });
 
+// ── Cron Helper Functions ────────────────────────────────────────────────────
+function getCurrentLocalTime(timezone) {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const dateStr = now.toLocaleDateString('en-CA', { timeZone: timezone });
+  const [hourStr, minuteStr] = timeStr.split(':');
+  return {
+    hour: parseInt(hourStr, 10),
+    minute: parseInt(minuteStr, 10),
+    localDate: dateStr
+  };
+}
+
+function isInWindow(targetHour, targetMinute, currentHour, currentMinute) {
+  const targetTotalMins = targetHour * 60 + targetMinute;
+  const currentTotalMins = currentHour * 60 + currentMinute;
+  return currentTotalMins >= targetTotalMins && currentTotalMins < targetTotalMins + 5;
+}
+
+async function hasLoggedInMealPeriod(userId, localDate, timezone, targetHour) {
+  const meals = await MealLog.find({ userId, localDate, isDeleted: false });
+  if (meals.length === 0) return false;
+  let periodStart, periodEnd;
+  if (targetHour >= 6 && targetHour < 12) { periodStart = 6; periodEnd = 12; }
+  else if (targetHour >= 11 && targetHour < 16) { periodStart = 11; periodEnd = 16; }
+  else { periodStart = 16; periodEnd = 24; }
+
+  return meals.some(meal => {
+    const mealDate = new Date(meal.loggedAt);
+    const mealLocalHourStr = mealDate.toLocaleTimeString('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      hour12: false
+    });
+    const mealLocalHour = parseInt(mealLocalHourStr, 10);
+    return mealLocalHour >= periodStart && mealLocalHour < periodEnd;
+  });
+}
+
+async function sendMealReminder(user, mealLabel, balance) {
+  const subscription = user.notifications.subscription;
+  if (!subscription?.endpoint) return false;
+
+  const balanceText = balance !== null
+    ? `$${balance.toFixed(0)} remaining today`
+    : 'Log your meal to track your balance';
+
+  const payload = JSON.stringify({
+    title: `Time to log your ${mealLabel}! 🍽️`,
+    body: balanceText,
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/badge-72x72.png',
+    tag: `meal-reminder-${mealLabel.toLowerCase()}`,
+    data: { url: '/?tab=log', mealLabel },
+    actions: [
+      { action: 'log-meal', title: 'Log Now' },
+      { action: 'dismiss', title: 'Later' }
+    ]
+  });
+
+  try {
+    await webpush.sendNotification(subscription, payload);
+    return true;
+  } catch (err) {
+    if (err.statusCode === 410 || err.statusCode === 404) {
+      await User.findByIdAndUpdate(user._id, {
+        'notifications.enabled': false,
+        'notifications.subscription': null
+      });
+    }
+    return false;
+  }
+}
+
+// ── POST /api/notifications/cron ───────────────────────────────────────────
+// Lightweight endpoint triggered by external cron jobs
+router.post('/cron', async (req, res) => {
+  if (req.body.token !== 'athlete') {
+    return res.status(403).json({ error: 'Unauthorized cron request' });
+  }
+
+  const startTime = Date.now();
+  try {
+    const users = await User.find({
+      'notifications.enabled': true,
+      'notifications.subscription.endpoint': { $exists: true }
+    }).select('name notifications profile');
+
+    let notificationsSent = 0;
+    let skipped = 0;
+
+    for (const user of users) {
+      const timezone = user.profile?.timezone || 'America/Chicago';
+      let localTime;
+      try {
+        localTime = getCurrentLocalTime(timezone);
+      } catch (tzErr) { continue; }
+
+      const { hour, minute, localDate } = localTime;
+      const DailyBalance = require('../models/DailyBalance');
+      const todayBalance = await DailyBalance.findOne({ userId: user._id, localDate });
+      const currentBalance = todayBalance?.currentBalance ?? null;
+
+      for (const notifTime of user.notifications.times) {
+        if (!isInWindow(notifTime.hour, notifTime.minute, hour, minute)) continue;
+
+        const lastSentKey = `${notifTime.label}_${localDate}`;
+        const lastSent = user.notifications.lastSentAt?.get(lastSentKey);
+        if (lastSent) { skipped++; continue; }
+
+        const alreadyLogged = await hasLoggedInMealPeriod(user._id, localDate, timezone, notifTime.hour);
+        if (alreadyLogged) { skipped++; continue; }
+
+        const sent = await sendMealReminder(user, notifTime.label, currentBalance);
+        if (sent) {
+          notificationsSent++;
+          if (!user.notifications.lastSentAt) user.notifications.lastSentAt = new Map();
+          user.notifications.lastSentAt.set(lastSentKey, new Date().toISOString());
+          await user.save();
+        }
+      }
+    }
+    const elapsed = Date.now() - startTime;
+    res.json({ message: 'Cron completed', elapsedMs: elapsed, notificationsSent, skipped });
+  } catch (err) {
+    console.error('[CRON] API endpoint error:', err.message);
+    res.status(500).json({ error: 'Internal cron error' });
+  }
+});
+
 module.exports = router;
