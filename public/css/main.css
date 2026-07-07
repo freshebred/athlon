@@ -327,7 +327,7 @@ a { color: var(--accent); text-decoration: none; }
   left: 0;
   right: 0;
   z-index: 90;
-  height: var(--header-h);
+  height: calc(var(--header-h) + var(--safe-top));
   padding-top: var(--safe-top);
   background: rgba(10, 15, 28, 0.85);
   backdrop-filter: blur(20px);
@@ -365,7 +365,7 @@ a { color: var(--accent); text-decoration: none; }
   left: 0;
   right: 0;
   z-index: 90;
-  height: var(--nav-h);
+  height: calc(var(--nav-h) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
   background: rgba(10, 15, 28, 0.92);
   backdrop-filter: blur(24px);
@@ -413,8 +413,8 @@ a { color: var(--accent); text-decoration: none; }
    MAIN APP CONTENT AREA
    ══════════════════════════════════════════════════════════════ */
 #main-app {
-  padding-top: var(--header-h);
-  padding-bottom: var(--nav-h);
+  padding-top: calc(var(--header-h) + var(--safe-top));
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
   min-height: 100dvh;
 }
 

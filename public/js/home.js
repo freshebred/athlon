@@ -297,8 +297,7 @@ const HomePage = {
 
 /* ── Shared helpers ──────────────────────────────────────── */
 function formatCalories(n) {
-  n = Math.round(Number(n) || 0);
-  return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+  return Math.round(Number(n) || 0).toLocaleString('en-US');
 }
 
 function formatTime(iso) {
