@@ -7,7 +7,7 @@
  */
 async function trigger() {
   try {
-    const targetUrl = process.argv[2] || process.env.APP_URL || 'https://YOUR_DOMAIN_HERE.com';
+    const targetUrl = process.argv[2] || process.env.APP_URL || 'https://athlon.hgphnm.com';
     
     if (targetUrl.includes('YOUR_DOMAIN')) {
       console.error('\n❌ Error: No domain specified.');
