@@ -7,20 +7,16 @@
  */
 async function trigger() {
   try {
-    // Determine port from .env if possible, otherwise default to 3000
-    const fs = require('fs');
-    const path = require('path');
-    let port = 3000;
-    try {
-      const envPath = path.join(__dirname, '.env');
-      if (fs.existsSync(envPath)) {
-        const envContent = fs.readFileSync(envPath, 'utf8');
-        const portMatch = envContent.match(/^PORT=(\d+)/m);
-        if (portMatch) port = parseInt(portMatch[1], 10);
-      }
-    } catch (e) {}
+    const targetUrl = process.argv[2] || process.env.APP_URL || 'https://YOUR_DOMAIN_HERE.com';
+    
+    if (targetUrl.includes('YOUR_DOMAIN')) {
+      console.error('\n❌ Error: No domain specified.');
+      console.error('Because cPanel Passenger does not use local ports, you must provide your public URL.');
+      console.error('Usage: node cron-notify.js https://your-actual-domain.com\n');
+      process.exit(1);
+    }
 
-    const res = await fetch(`http://localhost:${port}/api/notifications/cron`, {
+    const res = await fetch(`${targetUrl.replace(/\/$/, '')}/api/notifications/cron`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: 'athlete' })
