@@ -15,13 +15,19 @@
  * 6. Track last sent time to prevent duplicate notifications
  */
 
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const mongoose = require('mongoose');
 const webpush = require('web-push');
 
 // Configure VAPID
+const rawSubject = process.env.VAPID_EMAIL || process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
+const subject = (rawSubject.startsWith('mailto:') || rawSubject.startsWith('http')) 
+  ? rawSubject 
+  : `mailto:${rawSubject}`;
+
 webpush.setVapidDetails(
-  process.env.VAPID_EMAIL,
+  subject,
   process.env.VAPID_PUBLIC_KEY,
   process.env.VAPID_PRIVATE_KEY
 );

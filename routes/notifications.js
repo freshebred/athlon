@@ -6,8 +6,13 @@ const User = require('../models/User');
 const MealLog = require('../models/MealLog');
 
 // Configure web-push VAPID
+const rawSubject = process.env.VAPID_EMAIL || process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
+const subject = (rawSubject.startsWith('mailto:') || rawSubject.startsWith('http')) 
+  ? rawSubject 
+  : `mailto:${rawSubject}`;
+
 webpush.setVapidDetails(
-  process.env.VAPID_EMAIL,
+  subject,
   process.env.VAPID_PUBLIC_KEY,
   process.env.VAPID_PRIVATE_KEY
 );
