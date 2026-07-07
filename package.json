@@ -1,0 +1,52 @@
+{
+  "name": "athlon",
+  "version": "1.0.0",
+  "description": "Athlon - AI-powered calorie tracking with a bank account metaphor",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "cron": "node cron-notify.js",
+    "generate-vapid": "node generate-vapid.js",
+    "test": "jest --forceExit --detectOpenHandles --runInBand",
+    "test:watch": "jest --watch --runInBand"
+  },
+  "keywords": [
+    "calories",
+    "fitness",
+    "pwa",
+    "ai"
+  ],
+  "author": "Athlon",
+  "license": "ISC",
+  "jest": {
+    "testEnvironment": "node",
+    "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "testTimeout": 30000
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "groq-sdk": "^0.13.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.5",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.33.5",
+    "uuid": "^11.0.5",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.4.1",
+    "jest": "^30.4.2",
+    "mongodb-memory-server": "^11.2.0",
+    "supertest": "^7.2.2"
+  }
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0A0F1C">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Athlon">
+  <meta name="description" content="Athlon — Your AI-powered calorie bank. Track meals, earn calories from workouts, and stay in balance.">
+  <title>Athlon — Calorie Bank</title>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+
+  <!-- Preconnect for Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Barlow Condensed (headings) + Barlow (body) — Sports/Fitness design system -->
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Lucide icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Loading Screen ─────────────────────────────────── -->
+    <div id="loading-screen" class="loading-screen">
+      <div class="loading-logo"><span>A</span>THLON</div>
+      <div class="loading-bar-wrap">
+        <div class="loading-bar"></div>
+      </div>
+      <div class="loading-tagline">AI-Powered Calorie Bank</div>
+    </div>
+
+    <!-- ── Auth Screen ────────────────────────────────────── -->
+    <div id="auth-screen" class="screen hidden"></div>
+
+    <!-- ── Onboarding Screen ──────────────────────────────── -->
+    <div id="onboarding-screen" class="screen hidden"></div>
+
+    <!-- ── Main App ───────────────────────────────────────── -->
+    <div id="main-app" class="hidden">
+
+      <!-- Header -->
+      <header class="app-header">
+        <div class="app-logo"><span>A</span>THLON</div>
+        <div class="header-actions">
+          <button class="icon-btn" id="theme-toggle" aria-label="Toggle theme">
+            <i data-lucide="sun" class="icon-sm"></i>
+          </button>
+          <button class="icon-btn" id="notif-btn" aria-label="Notifications">
+            <i data-lucide="bell" class="icon-sm"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Tab content -->
+      <main id="tab-content"></main>
+
+      <!-- Bottom nav -->
+      <nav class="bottom-nav" id="bottom-nav">
+        <button class="nav-item active" data-tab="home" aria-label="Home">
+          <i data-lucide="home" class="icon-sm"></i>
+          <span>Home</span>
+        </button>
+        <button class="nav-item" data-tab="log" aria-label="Log meal">
+          <i data-lucide="plus-circle" class="icon-sm"></i>
+          <span>Log</span>
+        </button>
+        <button class="nav-item" data-tab="earn" aria-label="Log workout">
+          <i data-lucide="dumbbell" class="icon-sm"></i>
+          <span>Earn</span>
+        </button>
+        <button class="nav-item" data-tab="history" aria-label="History">
+          <i data-lucide="clock" class="icon-sm"></i>
+          <span>History</span>
+        </button>
+        <button class="nav-item" data-tab="profile" aria-label="Profile">
+          <i data-lucide="user" class="icon-sm"></i>
+          <span>Profile</span>
+        </button>
+      </nav>
+
+    </div><!-- /main-app -->
+
+  </div><!-- /app -->
+
+  <!-- ── PT Coach FAB ──────────────────────────────────────── -->
+  <button class="pt-coach-fab hidden" id="pt-coach-fab" aria-label="Open Coach Max">
+    <div class="fab-avatar">M</div>
+    <span class="fab-label">Max</span>
+  </button>
+
+  <!-- ── PT Coach Overlay ──────────────────────────────────── -->
+  <div class="pt-overlay hidden" id="pt-overlay"></div>
+
+  <!-- ── PT Coach Drawer ───────────────────────────────────── -->
+  <div class="pt-drawer hidden" id="pt-drawer">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header">
+      <div class="pt-avatar-wrap">
+        <div class="pt-avatar-lg">M</div>
+        <div class="pt-status-dot"></div>
+      </div>
+      <div class="pt-info">
+        <h3>Max</h3>
+        <p>Personal Trainer &amp; Coach</p>
+      </div>
+      <button class="icon-btn" id="pt-close" aria-label="Close">
+        <i data-lucide="x" class="icon-sm"></i>
+      </button>
+    </div>
+    <div class="chat-messages" id="pt-messages"></div>
+    <div class="chat-input-row">
+      <textarea id="pt-input" placeholder="Ask Max anything…" rows="1"></textarea>
+      <button id="pt-send" class="send-btn" aria-label="Send message">
+        <i data-lucide="send" class="icon-sm"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Toast Container ──────────────────────────────────── -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- ── Modal (bottom sheet) ──────────────────────────────── -->
+  <div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal-sheet" id="modal-card"></div>
+  </div>
+
+  <!-- ── Scripts ───────────────────────────────────────────── -->
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/onboarding.js"></script>
+  <script src="/js/home.js"></script>
+  <script src="/js/log.js"></script>
+  <script src="/js/earn.js"></script>
+  <script src="/js/history.js"></script>
+  <script src="/js/profile.js"></script>
+  <script src="/js/pt-coach.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
