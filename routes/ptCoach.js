@@ -108,9 +108,25 @@ const PT_TOOLS = [
           calories: { type: "number" },
           protein: { type: "number" },
           carbs: { type: "number" },
-          fat: { type: "number" }
+          fat: { type: "number" },
+          ingredients: {
+            type: "array",
+            description: "Detailed list of ingredients in the meal. Always include this.",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                amount: { type: "number", description: "Amount in grams" },
+                calories: { type: "number" },
+                protein: { type: "number" },
+                carbs: { type: "number" },
+                fat: { type: "number" }
+              },
+              required: ["name", "amount", "calories"]
+            }
+          }
         },
-        required: ["name", "calories"]
+        required: ["name", "calories", "ingredients"]
       }
     }
   }
@@ -144,10 +160,22 @@ async function executePTTool(toolCall, user) {
     }
     if (name === 'logFood') {
       const localDate = getLocalDate(user.profile?.timezone);
+      const ingredients = Array.isArray(args.ingredients) ? args.ingredients.map(i => ({
+        name: i.name || 'Unknown',
+        amount: Number(i.amount) || 1,
+        unit: 'g',
+        calories: Number(i.calories) || 0,
+        protein: Number(i.protein) || 0,
+        carbs: Number(i.carbs) || 0,
+        fat: Number(i.fat) || 0,
+        verified: false
+      })) : [{ name: args.name, amount: 1, unit: 'serving', calories: args.calories, protein: args.protein || 0, carbs: args.carbs || 0, fat: args.fat || 0, verified: false }];
+
       const meal = new MealLog({
         userId: user._id,
         name: args.name,
         logType: 'manual',
+        ingredients,
         totalCalories: args.calories,
         totalProtein: args.protein || 0,
         totalCarbs: args.carbs || 0,
