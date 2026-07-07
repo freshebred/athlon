@@ -271,7 +271,7 @@ const ProfilePage = {
       const reg = await navigator.serviceWorker.ready;
       const subscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(keyData.vapidPublicKey)
+        applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
       });
 
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
