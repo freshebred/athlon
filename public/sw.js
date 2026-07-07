@@ -1,4 +1,4 @@
-const CACHE_NAME = 'athlon-v3';
+const CACHE_NAME = 'athlon-v4';
 const STATIC_ASSETS = [
   '/',
   '/css/main.css',
