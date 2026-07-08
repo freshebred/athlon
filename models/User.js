@@ -60,6 +60,8 @@ const userSchema = new mongoose.Schema({
     timestamp: { type: Date, default: Date.now }
   }],
 
+  isVerified: { type: Boolean, default: false },
+
   theme: { type: String, enum: ['dark', 'light'], default: 'dark' },
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true });

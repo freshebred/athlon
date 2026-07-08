@@ -18,6 +18,13 @@ const App = {
     // Simulate loading bar completing
     await new Promise(r => setTimeout(r, 1400));
 
+    // Check URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('verified')) {
+      showToast('Email verified successfully!');
+      window.history.replaceState({}, document.title, "/");
+    }
+
     // Check auth state
     await this.checkAuth();
   },

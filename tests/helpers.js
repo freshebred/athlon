@@ -24,6 +24,7 @@ async function createUser(overrides = {}) {
     email: `test${Date.now()}@example.com`,
     password: 'password123',
     onboardingComplete: true,
+    isVerified: true,
     profile: {
       age:           25,
       weight:        70,

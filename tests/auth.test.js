@@ -21,10 +21,8 @@ describe('POST /api/auth/register', () => {
       .send({ name: 'Alice', email: 'alice@test.com', password: 'secret123' });
 
     expect(res.status).toBe(201);
-    expect(res.body.token).toBeDefined();
-    expect(res.body.user.email).toBe('alice@test.com');
-    expect(res.body.user.name).toBe('Alice');
-    expect(res.body.user).not.toHaveProperty('password');
+    expect(res.body.userId).toBeDefined();
+    expect(res.body.message).toMatch(/Verification email sent/i);
   });
 
   it('should return 400 when required fields are missing', async () => {
@@ -68,24 +66,21 @@ describe('POST /api/auth/register', () => {
     expect(user.password.startsWith('$2')).toBe(true); // bcrypt hash
   });
 
-  it('should set an httpOnly cookie on successful registration', async () => {
+  it('should not set an httpOnly cookie on registration since verification is required', async () => {
     const res = await request(app)
       .post('/api/auth/register')
       .send({ name: 'Eve', email: 'eve@test.com', password: 'secure123' });
 
     expect(res.status).toBe(201);
     const cookies = res.headers['set-cookie'];
-    expect(cookies).toBeDefined();
-    expect(cookies.some(c => c.startsWith('athlon_token='))).toBe(true);
+    expect(cookies).toBeUndefined(); // no cookies
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('POST /api/auth/login', () => {
-  it('should login with valid credentials', async () => {
-    await request(app)
-      .post('/api/auth/register')
-      .send({ name: 'Frank', email: 'frank@test.com', password: 'frankspass' });
+  it('should login with valid credentials if verified', async () => {
+    await createUser({ name: 'Frank', email: 'frank@test.com', password: 'frankspass', isVerified: true });
 
     const res = await request(app)
       .post('/api/auth/login')
@@ -97,9 +92,7 @@ describe('POST /api/auth/login', () => {
   });
 
   it('should return 401 with wrong password', async () => {
-    await request(app)
-      .post('/api/auth/register')
-      .send({ name: 'Grace', email: 'grace@test.com', password: 'correctpass' });
+    await createUser({ name: 'Grace', email: 'grace@test.com', password: 'correctpass', isVerified: true });
 
     const res = await request(app)
       .post('/api/auth/login')
@@ -127,13 +120,11 @@ describe('POST /api/auth/login', () => {
   });
 
   it('should be case-insensitive for email', async () => {
-    await request(app)
-      .post('/api/auth/register')
-      .send({ name: 'Ivan', email: 'Ivan@Test.COM', password: 'ivanpass' });
+    await createUser({ name: 'Ivan', email: 'ivan@test.com', password: 'ivanpass', isVerified: true });
 
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'ivan@test.com', password: 'ivanpass' });
+      .send({ email: 'Ivan@Test.COM', password: 'ivanpass' });
 
     expect(res.status).toBe(200);
     expect(res.body.user.email).toBe('ivan@test.com');
