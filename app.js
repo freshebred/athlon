@@ -64,7 +64,18 @@ app.get('/sw.js', (req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── API Routes ───────────────────────────────────────────────────────────────
+// ── API Routes ─────────────────────────────────────────────────────────────
+// Build version — always available, no auth required
+app.get('/api/version', (req, res) => {
+  const pkg = (() => { try { return require('./package.json'); } catch { return {}; } })();
+  res.json({
+    version:    DEPLOY_VERSION,
+    hash:       DEPLOY_VERSION.replace('athlon-', ''),
+    appVersion: pkg.version || '1.0.0',
+    deployedAt: new Date().toISOString()
+  });
+});
+
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/user',          require('./routes/user'));
 app.use('/api/onboarding',    require('./routes/onboarding'));

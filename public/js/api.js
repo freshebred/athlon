@@ -86,6 +86,10 @@ const API = {
     updateProfile: d  => API.put('/user/profile', d),
     updateTheme:   t  => API.put('/user/theme', { theme: t }),
     stats:         () => API.get('/user/stats')
+  },
+
+  version: {
+    check: () => fetch('/api/version').then(r => r.json())
   }
 };
 

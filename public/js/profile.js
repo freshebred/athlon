@@ -170,6 +170,16 @@ const ProfilePage = {
           </div>
           Made with ❤️ by <a href="https://portfolio.hgphnm.com" target="_blank" style="color:var(--text-2); font-weight:600; text-decoration:none;">Freshebred</a><br>
           <span style="opacity: 0.8; font-size: 0.7rem;">(and his beloved Gemini)</span>
+
+          <!-- Build hash badge -->
+          <div style="margin-top:16px; display:flex; justify-content:center;">
+            <button id="build-hash-badge"
+              title="Tap to copy full build hash"
+              style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;font-size:11px;color:var(--text-3);font-family:monospace;letter-spacing:0.03em;transition:background 0.2s;">
+              <i data-lucide="git-commit" style="width:12px;height:12px;"></i>
+              <span id="build-hash-text">loading…</span>
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -178,6 +188,37 @@ const ProfilePage = {
   _bindEvents(content) {
     // Edit profile
     content.querySelector('#edit-profile-btn')?.addEventListener('click', () => this._showEditModal());
+
+    // Build hash badge — fetch version and wire up copy
+    const badge    = content.querySelector('#build-hash-badge');
+    const hashSpan = content.querySelector('#build-hash-text');
+    let fullVersion = '';
+    if (badge && hashSpan) {
+      API.version.check().then(v => {
+        fullVersion = v.version || v.hash || 'unknown';
+        hashSpan.textContent = v.hash ? v.hash.slice(0, 7) : 'unknown';
+        badge.title = `Build: ${fullVersion} — tap to copy`;
+      }).catch(() => {
+        hashSpan.textContent = 'unavailable';
+      });
+
+      badge.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(fullVersion);
+          const original = hashSpan.textContent;
+          hashSpan.textContent = 'copied!';
+          badge.style.background = 'var(--accent-dim)';
+          badge.style.color      = 'var(--accent)';
+          setTimeout(() => {
+            hashSpan.textContent   = original;
+            badge.style.background = '';
+            badge.style.color      = '';
+          }, 1500);
+        } catch {
+          showToast(fullVersion, 'info');
+        }
+      });
+    }
 
     // Notification toggle
     const notifToggle = content.querySelector('#notif-toggle');
