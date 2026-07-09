@@ -121,6 +121,8 @@ The script:
 1. **By Name**: Enter meal name → AI lists all possible ingredients → ingredient grid → USDA lookup → confirm
 2. **By Photo**: Take a photo → vision AI describes food → ingredient assessment → same flow
 3. **Manual**: Enter name + calories directly
+4. **AI Verification**: Before logging, a secondary AI agent verifies that the total calories and amounts are realistic. It will strictly flag ingredients if their generated amounts are disproportionate to a normal serving size.
+5. **Real-time Recalculation**: When you edit an ingredient's amount or unit in the review grid, calories and macronutrients are automatically and proportionally recalculated.
 
 ### 💪 Workout Earnings
 - Take a workout photo → AI verifies you're actually working out
