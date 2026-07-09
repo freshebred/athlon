@@ -966,10 +966,20 @@ const LogPage = {
         return;
       }
 
+      const oldAmountGrams = ing.amountGrams || 1;
+      const newAmountGrams = this._toGrams(rawVal, unit, ing.name);
+      
+      const ratio = newAmountGrams / oldAmountGrams;
+      if (this.state.ingredients[idx].calories !== undefined) {
+        this.state.ingredients[idx].calories = Math.round(this.state.ingredients[idx].calories * ratio * 10) / 10;
+        if (this.state.ingredients[idx].protein !== undefined) this.state.ingredients[idx].protein = Math.round(this.state.ingredients[idx].protein * ratio * 10) / 10;
+        if (this.state.ingredients[idx].carbs !== undefined) this.state.ingredients[idx].carbs = Math.round(this.state.ingredients[idx].carbs * ratio * 10) / 10;
+        if (this.state.ingredients[idx].fat !== undefined) this.state.ingredients[idx].fat = Math.round(this.state.ingredients[idx].fat * ratio * 10) / 10;
+      }
+
       this.state.ingredients[idx].amount = Math.round(rawVal * 1000) / 1000; // up to 3dp
       this.state.ingredients[idx].unit   = unit;
-      // Recalculate amountGrams from new unit
-      this.state.ingredients[idx].amountGrams = this._toGrams(rawVal, unit, ing.name);
+      this.state.ingredients[idx].amountGrams = newAmountGrams;
 
       // Mark edits made if in confirm step
       if (isConfirmStep) {

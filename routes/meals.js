@@ -155,14 +155,14 @@ Example:
   { "name": "cheddar cheese", "amount": 1, "unit": "slice", "amountGrams": 22, "isCommon": false, "category": "dairy" }
 ]
 
-Always include at least 8-12 ingredients. Be thorough but realistic.`;
+Break the meal down into its core ingredients. Include all realistic components, typically 3-10 ingredients depending on complexity. Be thorough but realistic.`;
 
 const VERIFY_SYSTEM = `You are a calorie verification expert for a fitness tracking app. Your role is to:
 
 1. CHECK the meal name — does it match the ingredient list? Flag suspicious mismatches.
-2. CHECK each ingredient's calorie count — is it realistic?
-   - Highlight any ingredient whose calories look too high or too low.
-   - For flagged ingredients, propose a specific corrected amount OR corrected calories.
+2. CHECK each ingredient's calorie count and amount — is it realistic for a single typical serving?
+   - Highlight ALL ingredients whose calories or amounts look too high or too low. You MUST evaluate every ingredient and flag every single one that is incorrect. Do not stop at just one!
+   - For EACH flagged ingredient, propose a specific corrected amount OR corrected calories.
 3. EVALUATE the total — is it in a plausible range for this type of meal?
 
 IMPORTANT RESPONSE FORMAT — respond ONLY with valid JSON:
@@ -258,6 +258,7 @@ router.post('/analyze-name', requireAuth, async (req, res) => {
 
     const ingredients = parseAIJson(response);
     if (!Array.isArray(ingredients)) {
+      console.error('[MEALS] AI did not return a valid array. Raw response:', response);
       return res.status(500).json({ error: 'Failed to analyze meal. Please try again.' });
     }
 
@@ -304,6 +305,7 @@ List ALL possible ingredients in this meal.`;
 
     const ingredients = parseAIJson(ingredientResponse);
     if (!Array.isArray(ingredients)) {
+      console.error('[MEALS] Image AI did not return a valid array. Raw response:', ingredientResponse);
       return res.status(500).json({ error: 'Failed to analyze image ingredients. Please try again.' });
     }
 
@@ -411,6 +413,10 @@ async function lookupIngredientWithRetry(ing) {
       );
       const retryData = parseAIJson(retryResponse);
 
+      if (!retryData) {
+        console.error('[MEALS] AI failed to return retry json. Raw response:', retryResponse);
+      }
+
       if (retryData?.useEstimate) {
         const calories = calcCalories(retryData.estimatedCaloriesPer100g || 50, amountGrams);
         return {
@@ -493,6 +499,7 @@ Please verify this meal's calorie accuracy.`;
 
     const verdict = parseAIJson(response);
     if (!verdict) {
+      console.error('[MEALS] AI failed to verify calories. Raw response:', response);
       return res.json({
         reasonable: true,
         verdict: 'Unable to verify — proceeding with calculated values.',
@@ -565,6 +572,7 @@ Please review these user edits.`;
 
     const verdict = parseAIJson(response);
     if (!verdict) {
+      console.error('[MEALS] AI failed to verify edit. Raw response:', response);
       return res.json({
         verdict: 'approve',
         message: 'Looks good! Your edits have been noted.',

@@ -72,7 +72,11 @@ router.post('/verify-image', requireAuth, upload.single('image'), async (req, re
         WORKOUT_VERIFY_SYSTEM,
         256
       );
-      parsed = parseAIJson(reparse) || { isWorkedOut: false, confidence: 'low', description: verdict, reason: 'Could not verify' };
+      parsed = parseAIJson(reparse);
+      if (!parsed) {
+        console.error('[WORKOUTS] AI failed to parse image verdict. Raw response:', reparse);
+        parsed = { isWorkedOut: false, confidence: 'low', description: verdict, reason: 'Could not verify' };
+      }
     }
 
     res.json({
@@ -115,6 +119,7 @@ Calculate calories burned.`;
 
     const estimate = parseAIJson(response);
     if (!estimate) {
+      console.error('[WORKOUTS] AI failed to estimate calories. Raw response:', response);
       return res.status(500).json({ error: 'Failed to estimate calories burned.' });
     }
 

@@ -49,8 +49,10 @@ Respond ONLY with valid JSON: {"safe": true} or {"safe": false, "reason": "brief
       temperature: 0
     });
 
-    const result = parseAIJson(response.choices[0]?.message?.content || '{"safe": true}');
+    const raw = response.choices[0]?.message?.content || '{"safe": true}';
+    const result = parseAIJson(raw);
     if (result && typeof result.safe === 'boolean') return result;
+    console.error('[SAFEGUARD] AI did not return a valid boolean safe object. Raw response:', raw);
     return { safe: true }; // fail-open for classifier errors
   } catch (err) {
     console.error('[SAFEGUARD] Check failed (fail-open):', err.message);
