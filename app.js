@@ -8,7 +8,17 @@ const express      = require('express');
 const cookieParser = require('cookie-parser');
 const cors         = require('cors');
 const path         = require('path');
+const fs           = require('fs');
 const rateLimit    = require('express-rate-limit');
+
+// ── Cache-bust token: git commit hash (falls back to timestamp) ──────────────
+let DEPLOY_VERSION = 'athlon-local';
+try {
+  const { execSync } = require('child_process');
+  DEPLOY_VERSION = 'athlon-' + execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+} catch {
+  DEPLOY_VERSION = 'athlon-' + Date.now();
+}
 
 const app = express();
 
@@ -34,6 +44,24 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 // ── Static Files ─────────────────────────────────────────────────────────────
+// Serve sw.js with no-cache so browsers always refetch it,
+// and inject the deploy version so the SW busts its own cache on every deploy.
+const SW_SOURCE = path.join(__dirname, 'public', 'sw.js');
+app.get('/sw.js', (req, res) => {
+  try {
+    let sw = fs.readFileSync(SW_SOURCE, 'utf8');
+    // Replace the hardcoded cache name with the deploy-stamped one
+    sw = sw.replace(/const CACHE_NAME = '[^']*'/, `const CACHE_NAME = '${DEPLOY_VERSION}'`);
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.send(sw);
+  } catch (err) {
+    console.error('[SW] Failed to serve sw.js:', err.message);
+    res.status(500).send('// Service worker unavailable');
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── API Routes ───────────────────────────────────────────────────────────────
