@@ -11,17 +11,19 @@ const { buildApp, createUser, createWorkout, createBalance, authHeader } = requi
 const { agentChat, parseAIJson, analyzeImage } = require('../utils/groq');
 const WorkoutLog  = require('../models/WorkoutLog');
 const DailyBalance = require('../models/DailyBalance');
+const { getLocalDate } = require('../utils/balance');
 const { Types }   = require('mongoose');
 
-let app, user;
+let app, user, TODAY;
 
 beforeAll(() => {
   app = buildApp();
 });
 
 beforeEach(async () => {
+  TODAY = getLocalDate('America/Chicago');
   user = await createUser({ email: `workouts-${Date.now()}@test.com` });
-  await createBalance(user._id);
+  await createBalance(user._id, { localDate: TODAY });
 
   // Default mock responses
   agentChat.mockResolvedValue(JSON.stringify({
@@ -191,7 +193,8 @@ describe('POST /api/workouts/log', () => {
       .set(authHeader(user))
       .send({ activityType: 'Yoga', duration: 60, caloriesBurnt: 200 });
 
-    const balance = await DailyBalance.findOne({ userId: user._id });
+    // Look up today's balance (same date the route uses)
+    const balance = await DailyBalance.findOne({ userId: user._id, localDate: TODAY });
     expect(balance.caloriesBurnt).toBe(200);
   });
 
@@ -225,8 +228,8 @@ describe('POST /api/workouts/log', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GET /api/workouts/today', () => {
   it('should return workouts logged today', async () => {
-    await createWorkout(user._id, { activityType: 'Running' });
-    await createWorkout(user._id, { activityType: 'Yoga' });
+    await createWorkout(user._id, { activityType: 'Running', localDate: TODAY });
+    await createWorkout(user._id, { activityType: 'Yoga',    localDate: TODAY });
 
     const res = await request(app)
       .get('/api/workouts/today')
@@ -253,8 +256,8 @@ describe('GET /api/workouts/today', () => {
 
   it('should not return workouts from other users', async () => {
     const otherUser = await createUser({ email: `other-wt-${Date.now()}@test.com` });
-    await createWorkout(otherUser._id);
-    await createWorkout(user._id, { activityType: 'Running' });
+    await createWorkout(otherUser._id, { localDate: TODAY });
+    await createWorkout(user._id, { activityType: 'Running', localDate: TODAY });
 
     const res = await request(app)
       .get('/api/workouts/today')

@@ -38,6 +38,9 @@ The JSON has two required fields:
     "type": "none",
     "approved": false,
     "caloriesAdjusted": null,
+    "ingredientName": null,
+    "ingredientCalories": null,
+    "ingredientAmount": null,
     "note": null
   }
 }
@@ -48,15 +51,19 @@ The JSON has two required fields:
 | `type` | When to use |
 |---|---|
 | `"none"` | No database change needed — general chat, asking questions, coaching |
-| `"approve_meal_edit"` | You approve changing the calorie count of a meal |
+| `"approve_meal_edit"` | You approve changing the total calorie count of a meal |
+| `"approve_ingredient_edit"` | You approve changing a specific ingredient's calories and amount |
 | `"approve_meal_delete"` | You approve deleting a meal from the log |
 | `"approve_workout_adjust"` | You approve adjusting the calorie credit for a workout |
-| `"deny"` | You are declining a request (meal edit/delete or workout adjust) |
+| `"deny"` | You are declining a request (meal edit/delete, ingredient edit, or workout adjust) |
 
 ### Action field rules
 
 - `approved` (boolean): `true` for approve actions, `false` for deny or none
 - `caloriesAdjusted` (number | null): The NEW total calories for the item after adjustment. Include this for `approve_meal_edit` and `approve_workout_adjust`. Set to `null` for deletions and denials.
+- `ingredientName` (string | null): The name of the ingredient being edited. Required for `approve_ingredient_edit`.
+- `ingredientCalories` (number | null): The new calories for the ingredient. Required for `approve_ingredient_edit`.
+- `ingredientAmount` (number | null): The new amount (in grams) for the ingredient. Required for `approve_ingredient_edit`.
 - `note` (string | null): A short internal note about the resolution (used for memory). Set to `null` for general chat.
 
 ---
@@ -144,7 +151,15 @@ User requests edit/delete:
 ```json
 {
   "message": "Makes sense — if you only had half the portion, 320 cal is the right call. Updating it now.",
-  "action": { "type": "approve_meal_edit", "approved": true, "caloriesAdjusted": 320, "note": "2026-07-07 Meal Edit: User had half portion of salad → Approved, updated to 320 cal" }
+  "action": { "type": "approve_meal_edit", "approved": true, "caloriesAdjusted": 320, "ingredientName": null, "ingredientCalories": null, "ingredientAmount": null, "note": "2026-07-07 Meal Edit: User had half portion of salad → Approved, updated to 320 cal" }
+}
+```
+
+**Approving an ingredient edit:**
+```json
+{
+  "message": "Got it, you only used 15g of butter instead of 50g. That changes things a lot! Updating the butter to 107 cal.",
+  "action": { "type": "approve_ingredient_edit", "approved": true, "caloriesAdjusted": null, "ingredientName": "Butter", "ingredientCalories": 107, "ingredientAmount": 15, "note": "2026-07-07 Ingredient Edit: User changed butter to 15g → Approved, updated ingredient to 107 cal" }
 }
 ```
 

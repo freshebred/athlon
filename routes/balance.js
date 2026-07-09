@@ -41,6 +41,7 @@ router.get('/today', requireAuth, async (req, res) => {
         totalCarbs: m.totalCarbs,
         totalFat: m.totalFat,
         logType: m.logType,
+        ingredients: m.ingredients,
         loggedAt: m.loggedAt
       })),
       workouts: workouts.map(w => ({

@@ -235,10 +235,22 @@ const HomePage = {
 
   _mealOptions(card) {
     const { id, name, cals } = card.dataset;
+    const meal = this.data.meals.find(m => (m._id || m.id) === id);
+    const ingredientsHtml = meal && meal.ingredients && meal.ingredients.length > 0 
+      ? `<div class="ingredients-list" style="margin: 12px 0; max-height: 150px; overflow-y: auto; text-align: left; background: var(--bg-card); padding: 8px; border-radius: 8px;">` + 
+        meal.ingredients.map(ing => `
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px; padding-bottom:4px; border-bottom:1px solid var(--border);">
+            <span style="color:var(--text-1);">${esc(ing.name)} ${ing.amount ? `(${ing.amount}${ing.unit || 'g'})` : ''}</span>
+            <span style="color:var(--text-2);">${Math.round(ing.calories)} kcal</span>
+          </div>
+        `).join('') + `</div>`
+      : `<p style="color:var(--text-2);font-size:13px;margin:12px 0;">No ingredients logged</p>`;
+
     showModal(`
       <div class="modal-handle"></div>
       <div class="modal-title">${name}</div>
       <p style="color:var(--text-2);font-size:15px;margin-bottom:4px;">${cals} calories</p>
+      ${ingredientsHtml}
       <div class="modal-actions">
         <button class="btn-secondary" id="modal-dispute">
           <i data-lucide="message-circle" class="icon-sm"></i> Dispute with Max

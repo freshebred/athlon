@@ -11,9 +11,10 @@
 const mongoose = require('mongoose');
 jest.mock('../utils/groq', () => ({
   ...jest.requireActual('../utils/groq'),
-  agentChat:    jest.fn(),
-  reasoningChat: jest.fn(),
-  analyzeImage: jest.fn()
+  agentChat:      jest.fn(),
+  reasoningChat:  jest.fn(),
+  analyzeImage:   jest.fn(),
+  checkUserInput: jest.fn().mockResolvedValue({ safe: true })
 }));
 
 const { createUser, createBalance } = require('./helpers');
@@ -348,5 +349,90 @@ describe('models/User.js — comparePassword', () => {
     const user = await createUser({ email: `compare2-${Date.now()}@test.com` });
     const isMatch = await user.comparePassword('wrongpassword');
     expect(isMatch).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('utils/groq.js — hasLeakedInternals', () => {
+  // Import the real implementation (not the mock) for unit testing
+  const { hasLeakedInternals, sanitiseAIResponse } = jest.requireActual('../utils/groq');
+
+  it('should detect <tool_call> XML blocks', () => {
+    expect(hasLeakedInternals('Hello <tool_call>{"action":"search"}</tool_call> world')).toBe(true);
+  });
+
+  it('should detect raw JSON blobs from tool calls', () => {
+    expect(hasLeakedInternals('Here is the data: {"USDA_search": "chicken"}')).toBe(true);
+  });
+
+  it('should detect [TOOL_CALL] markers', () => {
+    expect(hasLeakedInternals('[TOOL_CALL] some data [/TOOL_CALL]')).toBe(true);
+  });
+
+  it('should return false for clean responses', () => {
+    expect(hasLeakedInternals('Great! Your chicken breast has about 247 calories.')).toBe(false);
+  });
+
+  it('should return false for empty/null input', () => {
+    expect(hasLeakedInternals(null)).toBe(false);
+    expect(hasLeakedInternals('')).toBe(false);
+    expect(hasLeakedInternals(undefined)).toBe(false);
+  });
+
+  it('should return false for JSON that is not tool-related', () => {
+    expect(hasLeakedInternals('Here is a recipe: {"name": "pasta", "calories": 400}')).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('utils/groq.js — sanitiseAIResponse', () => {
+  const { sanitiseAIResponse } = jest.requireActual('../utils/groq');
+
+  it('should remove <tool_call> XML blocks', () => {
+    const input = 'Here is my answer. <tool_call>{"action":"search"}</tool_call> Hope that helps!';
+    const output = sanitiseAIResponse(input);
+    expect(output).not.toMatch(/<tool_call>/);
+    expect(output).toContain('Here is my answer.');
+  });
+
+  it('should preserve clean response content', () => {
+    const input = 'Your meal has about 400 calories. Good job tracking!';
+    expect(sanitiseAIResponse(input)).toBe(input);
+  });
+
+  it('should handle null/undefined gracefully', () => {
+    expect(sanitiseAIResponse(null)).toBeNull();
+    expect(sanitiseAIResponse(undefined)).toBeUndefined();
+    expect(sanitiseAIResponse('')).toBe('');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('utils/groq.js — parseAIJson', () => {
+  const { parseAIJson } = jest.requireActual('../utils/groq');
+
+  it('should parse plain JSON', () => {
+    const result = parseAIJson('{"key": "value"}');
+    expect(result).toEqual({ key: 'value' });
+  });
+
+  it('should parse JSON in markdown code blocks', () => {
+    const result = parseAIJson('```json\n{"key": "value"}\n```');
+    expect(result).toEqual({ key: 'value' });
+  });
+
+  it('should return null for invalid JSON', () => {
+    expect(parseAIJson('not json at all')).toBeNull();
+  });
+
+  it('should extract JSON from mixed text', () => {
+    const result = parseAIJson('Some text before {"key": "value"} some text after');
+    expect(result).toEqual({ key: 'value' });
+  });
+
+  it('should parse JSON arrays', () => {
+    const result = parseAIJson('[{"name": "egg"}, {"name": "salt"}]');
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
   });
 });

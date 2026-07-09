@@ -49,6 +49,7 @@ const API = {
     analyzeImage: fd      => API.postForm('/meals/analyze-image', fd),
     usdaLookup:   i       => API.post('/meals/usda-lookup', { ingredients: i }),
     verify:       d       => API.post('/meals/verify', d),
+    verifyEdit:   d       => API.post('/meals/verify-edit', d),
     log:          d       => API.post('/meals/log', d),
     manual:       d       => API.post('/meals/manual', d),
     today:        ()      => API.get('/meals/today'),

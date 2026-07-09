@@ -2,9 +2,26 @@
 
 const PTCoach = {
   conversationId: null,
-  pendingContext: null,   // context set before drawer opens
+  pendingContext: null,
   isOpen: false,
   isTyping: false,
+  _lastMessageText: null,  // for retry on failure
+  _lastMessageIsDispute: false,
+
+  // Patterns to detect leaked AI internals client-side
+  _leakPatterns: [
+    /<tool_call>/i,
+    /<\/tool_call>/i,
+    /\{"(searchUSDA|getRecentMeals|getRecentWorkouts|logFood)":/,
+    /\[TOOL_CALL\]/i,
+    /"tool_calls"\s*:/,
+    /\btool_call_id\b/
+  ],
+
+  _hasLeakedInternals(text) {
+    if (!text) return false;
+    return this._leakPatterns.some(p => p.test(text));
+  },
 
   init() {
     const fab      = document.getElementById('pt-coach-fab');
@@ -128,6 +145,7 @@ const PTCoach = {
       input.style.height = 'auto';
     }
 
+    this._lastMessageText = text;
     this._addUserMessage(text);
     this._showTyping();
 
@@ -137,7 +155,7 @@ const PTCoach = {
       if (this.pendingContext && !this.conversationId) {
         const ctx = this.pendingContext;
         if (ctx.referenceId && ctx.referenceType) {
-          // Start formal dispute conversation
+          this._lastMessageIsDispute = true;
           const data = await API.ptCoach.startDispute({
             referenceId: ctx.referenceId,
             referenceType: ctx.referenceType,
@@ -147,14 +165,19 @@ const PTCoach = {
           if (data.uiToolCalls && data.uiToolCalls.length) {
             this._renderToolCalls(data.uiToolCalls);
           }
-          this._addBotMessage(data.message);
+          const msg = data.message;
+          if (this._hasLeakedInternals(msg)) {
+            this._handleSeizure();
+            return;
+          }
+          this._addBotMessage(msg);
           this.conversationId = data.conversationId;
           sessionStorage.setItem('athlon_pt_conv', this.conversationId);
           this.pendingContext = null;
+          this._lastMessageIsDispute = false;
           return;
         }
 
-        // General coaching context — normalize type to schema enum
         const typeMap = {
           'meal_dispute':        'dispute_meal',
           'meal_delete_request': 'dispute_meal',
@@ -173,22 +196,78 @@ const PTCoach = {
       if (data.uiToolCalls && data.uiToolCalls.length) {
         this._renderToolCalls(data.uiToolCalls);
       }
-      this._addBotMessage(data.message);
+
+      const msg = data.message;
+      // Client-side check for leaked internals (should have been caught server-side)
+      if (this._hasLeakedInternals(msg)) {
+        this._handleSeizure();
+        return;
+      }
+
+      this._addBotMessage(msg);
 
       if (data.conversationId && !this.conversationId) {
         this.conversationId = data.conversationId;
         sessionStorage.setItem('athlon_pt_conv', this.conversationId);
       }
 
-      // Handle action results (PT approved/denied something)
       if (data.actionResult) {
         this._handleActionResult(data.actionResult);
       }
 
     } catch (err) {
       this._hideTyping();
-      this._addBotMessage("Sorry, I'm having trouble connecting right now. Try again in a sec.");
+      // Show retry option on error
+      this._addBotMessage(this._buildRetryMessage(err.message));
       console.error('[PT-COACH]', err.message);
+    }
+  },
+
+  /**
+   * Called when leaked internals are detected in a response.
+   * Shows the "Max had a seizure" message and auto-retries once.
+   */
+  async _handleSeizure() {
+    this._hideTyping();
+    this._addSeizureMessage();
+    await new Promise(resolve => setTimeout(resolve, 1500)); // brief pause for UX
+
+    // Auto-retry the last message
+    this._showTyping();
+    try {
+      const data = await API.ptCoach.chat(this._lastMessageText, this.conversationId, null);
+      this._hideTyping();
+      const msg = data.message;
+      // If still leaking after retry, just show cleaned text or fallback
+      if (this._hasLeakedInternals(msg)) {
+        this._addBotMessage("I seem to be having technical difficulties. Please try asking again.");
+      } else {
+        this._addBotMessage(msg);
+      }
+      if (data.conversationId && !this.conversationId) {
+        this.conversationId = data.conversationId;
+        sessionStorage.setItem('athlon_pt_conv', this.conversationId);
+      }
+    } catch (retryErr) {
+      this._hideTyping();
+      this._addBotMessage("Still having issues. Please try again in a moment.");
+    }
+  },
+
+  /**
+   * Build an HTML string for an error message with a Retry button.
+   */
+  _buildRetryMessage(errMsg) {
+    return `Sorry, I'm having trouble connecting right now. <button onclick="PTCoach._retryLastMessage()" style="background:var(--accent-dim);color:var(--accent);border:none;border-radius:99px;padding:4px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:6px;display:inline-flex;align-items:center;gap:6px;">↺ Retry</button>`;
+  },
+
+  _retryLastMessage() {
+    if (this._lastMessageText) {
+      // Remove the error message
+      const container = document.getElementById('pt-messages');
+      const last = container?.lastElementChild;
+      if (last) last.remove();
+      this._sendMessage(this._lastMessageText);
     }
   },
 
@@ -227,7 +306,7 @@ const PTCoach = {
     this._scrollToBottom();
   },
 
-  _addBotMessage(text) {
+  _addBotMessage(html) {
     const container = document.getElementById('pt-messages');
     if (!container) return;
 
@@ -235,10 +314,28 @@ const PTCoach = {
     msg.className = 'chat-message bot-message';
     msg.innerHTML = `
       <div class="bot-avatar-sm">M</div>
-      <div class="chat-bubble bot-bubble">${this._formatBotMessage(text)}</div>
+      <div class="chat-bubble bot-bubble">${this._formatBotMessage(html)}</div>
     `;
     container.appendChild(msg);
 
+    requestAnimationFrame(() => msg.classList.add('message-in'));
+    this._scrollToBottom();
+  },
+
+  /** Adds the "Max had a seizure" recovery message */
+  _addSeizureMessage() {
+    const container = document.getElementById('pt-messages');
+    if (!container) return;
+
+    const msg = document.createElement('div');
+    msg.className = 'chat-message bot-message seizure-message';
+    msg.innerHTML = `
+      <div class="bot-avatar-sm" style="background:var(--danger-dim);color:var(--danger);">M</div>
+      <div class="chat-bubble bot-bubble" style="background:var(--danger-dim);border:1px solid rgba(255,71,87,0.2);">
+        <em style="font-size:13px;color:var(--danger);">Max had a seizure trying to respond, we're resuscitating him, one sec...</em>
+      </div>
+    `;
+    container.appendChild(msg);
     requestAnimationFrame(() => msg.classList.add('message-in'));
     this._scrollToBottom();
   },
@@ -332,7 +429,13 @@ const PTCoach = {
   },
 
   _formatBotMessage(text) {
-    // Convert markdown-lite: **bold**, newlines → <br>
+    // If the text contains HTML (e.g. retry button), render it directly but still escape user-visible parts
+    if (text && text.includes('<button')) {
+      // Already HTML — just do basic markdown on the non-HTML parts
+      return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+    }
     return this._esc(text)
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')

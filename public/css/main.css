@@ -1015,6 +1015,140 @@ a { color: var(--accent); text-decoration: none; }
 /* Manual form */
 .manual-form { display: flex; flex-direction: column; gap: 14px; }
 
+/* ── Retry Banner ─────────────────────────────────────────────── */
+.retry-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--danger-dim);
+  border: 1px solid rgba(255, 71, 87, 0.2);
+  border-radius: var(--radius);
+  font-size: 14px;
+  color: var(--text-2);
+  margin-top: 8px;
+  animation: slideInDown 0.2s var(--ease);
+}
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 99px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.retry-btn:hover { background: var(--surface-3); }
+
+/* ── Add Ingredient Button ─────────────────────────────────────── */
+.log-add-ingredient-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-3);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  min-height: 50px;
+}
+.log-add-ingredient-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* ── Flagged Ingredients (AI suggestions) ─────────────────────── */
+.flagged-ingredients-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.flagged-ingredient-card {
+  background: var(--gold-dim);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fi-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.fi-issue {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.fi-suggestion {
+  font-size: 13px;
+  color: var(--gold);
+  font-weight: 600;
+}
+.fi-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* ── Confirm ingredient row — editable amount ─────────────────── */
+.ci-amount {
+  font-size: 13px;
+  color: var(--accent);
+  min-width: 60px;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.ci-amount:hover { color: var(--text); text-decoration: none; }
+
+/* ── Unit selector in modal ───────────────────────────────────── */
+.select {
+  background: var(--surface);
+  color: var(--text);
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  font-size: 15px;
+  font-family: var(--font-body);
+  transition: var(--transition);
+  width: 100%;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* ── Seizure message in PT Chat ───────────────────────────────── */
+.seizure-message .chat-bubble {
+  animation: pulseWarning 0.4s ease;
+}
+@keyframes pulseWarning {
+  0%   { opacity: 0; transform: scale(0.95); }
+  60%  { transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ══════════════════════════════════════════════════════════════
    EARN PAGE
    ══════════════════════════════════════════════════════════════ */

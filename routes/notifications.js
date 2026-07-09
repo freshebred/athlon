@@ -7,8 +7,8 @@ const MealLog = require('../models/MealLog');
 
 // Configure web-push VAPID
 const rawSubject = process.env.VAPID_EMAIL || process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
-const subject = (rawSubject.startsWith('mailto:') || rawSubject.startsWith('http')) 
-  ? rawSubject 
+const subject = (rawSubject.startsWith('mailto:') || rawSubject.startsWith('http'))
+  ? rawSubject
   : `mailto:${rawSubject}`;
 
 webpush.setVapidDetails(
@@ -35,7 +35,6 @@ router.post('/subscribe', requireAuth, async (req, res) => {
     user.notifications.subscription = subscription;
     user.notifications.enabled = true;
 
-    // Update timezone if provided
     if (timezone && user.profile) {
       user.profile.timezone = timezone;
     }
@@ -121,6 +120,7 @@ router.post('/send-test', requireAuth, async (req, res) => {
 });
 
 // ── Cron Helper Functions ────────────────────────────────────────────────────
+
 function getCurrentLocalTime(timezone) {
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', {
@@ -144,35 +144,55 @@ function isInWindow(targetHour, targetMinute, currentHour, currentMinute) {
   return currentTotalMins >= targetTotalMins && currentTotalMins < targetTotalMins + 5;
 }
 
-async function hasLoggedInMealPeriod(userId, localDate, timezone, targetHour) {
-  const meals = await MealLog.find({ userId, localDate, isDeleted: false });
-  if (meals.length === 0) return false;
-  let periodStart, periodEnd;
-  if (targetHour >= 6 && targetHour < 12) { periodStart = 6; periodEnd = 12; }
-  else if (targetHour >= 11 && targetHour < 16) { periodStart = 11; periodEnd = 16; }
-  else { periodStart = 16; periodEnd = 24; }
-
-  return meals.some(meal => {
-    const mealDate = new Date(meal.loggedAt);
-    const mealLocalHourStr = mealDate.toLocaleTimeString('en-US', {
-      timeZone: timezone,
-      hour: '2-digit',
-      hour12: false
-    });
-    const mealLocalHour = parseInt(mealLocalHourStr, 10);
-    return mealLocalHour >= periodStart && mealLocalHour < periodEnd;
-  });
+/**
+ * Returns the most recently logged meal within the past hour, or null.
+ * "Past hour" = within 60 minutes of now.
+ */
+async function getRecentlyLoggedMeal(userId, timezone) {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const meal = await MealLog.findOne({
+    userId,
+    isDeleted: false,
+    loggedAt: { $gte: oneHourAgo }
+  }).sort({ loggedAt: -1 });
+  return meal || null;
 }
 
-async function sendMealReminder(user, mealLabel, balance) {
-  const subscription = user.notifications.subscription;
-  if (!subscription?.endpoint) return false;
+/**
+ * Truncate meal name for use in a notification body.
+ */
+function truncateMealName(name, maxLen = 28) {
+  if (!name) return 'your meal';
+  return name.length > maxLen ? name.substring(0, maxLen - 1) + '…' : name;
+}
 
-  const balanceText = balance !== null
-    ? `$${balance.toFixed(0)} remaining today`
+/**
+ * Build the notification payload based on whether the user recently logged.
+ * - If logged in the past hour → contextual follow-up message
+ * - Otherwise → standard meal reminder
+ */
+function buildNotificationPayload(mealLabel, recentMeal, currentBalance) {
+  const balanceText = currentBalance !== null
+    ? `$${Math.round(currentBalance)} remaining today`
     : 'Log your meal to track your balance';
 
-  const payload = JSON.stringify({
+  if (recentMeal) {
+    const truncated = truncateMealName(recentMeal.name);
+    return {
+      title: `Logged ${truncated}? 🍽️`,
+      body: `I saw you logged "${truncated}" — did you eat anything else this ${mealLabel.toLowerCase()}?`,
+      icon: '/icons/icon-192x192.png',
+      badge: '/icons/badge-72x72.png',
+      tag: `meal-reminder-${mealLabel.toLowerCase()}`,
+      data: { url: '/?tab=log', mealLabel },
+      actions: [
+        { action: 'log-meal', title: 'Log More' },
+        { action: 'dismiss', title: 'Nope, I\'m good' }
+      ]
+    };
+  }
+
+  return {
     title: `Time to log your ${mealLabel}! 🍽️`,
     body: balanceText,
     icon: '/icons/icon-192x192.png',
@@ -183,24 +203,35 @@ async function sendMealReminder(user, mealLabel, balance) {
       { action: 'log-meal', title: 'Log Now' },
       { action: 'dismiss', title: 'Later' }
     ]
-  });
+  };
+}
+
+async function sendMealNotification(user, mealLabel, currentBalance, recentMeal) {
+  const subscription = user.notifications.subscription;
+  if (!subscription?.endpoint) return false;
+
+  const payload = JSON.stringify(buildNotificationPayload(mealLabel, recentMeal, currentBalance));
 
   try {
     await webpush.sendNotification(subscription, payload);
     return true;
   } catch (err) {
     if (err.statusCode === 410 || err.statusCode === 404) {
+      // Subscription expired — disable it
       await User.findByIdAndUpdate(user._id, {
         'notifications.enabled': false,
         'notifications.subscription': null
       });
     }
+    console.error('[NOTIFICATIONS] Push failed:', err.statusCode, err.message);
     return false;
   }
 }
 
 // ── POST /api/notifications/cron ───────────────────────────────────────────
-// Lightweight endpoint triggered by external cron jobs
+// Lightweight endpoint triggered by external cron jobs (e.g. cron-notify.js)
+// IMPORTANT: Notifications are ALWAYS sent in the window, regardless of whether
+// the user has already logged. If logged recently → contextual follow-up message.
 router.post('/cron', async (req, res) => {
   if (req.body.token !== 'athlete') {
     return res.status(403).json({ error: 'Unauthorized cron request' });
@@ -221,7 +252,10 @@ router.post('/cron', async (req, res) => {
       let localTime;
       try {
         localTime = getCurrentLocalTime(timezone);
-      } catch (tzErr) { continue; }
+      } catch (tzErr) {
+        console.warn('[CRON] Invalid timezone for user', user._id, tzErr.message);
+        continue;
+      }
 
       const { hour, minute, localDate } = localTime;
       const DailyBalance = require('../models/DailyBalance');
@@ -229,30 +263,54 @@ router.post('/cron', async (req, res) => {
       const currentBalance = todayBalance?.currentBalance ?? null;
 
       for (const notifTime of user.notifications.times) {
+        // Check if we are within the 5-minute notification window
         if (!isInWindow(notifTime.hour, notifTime.minute, hour, minute)) continue;
 
+        // De-duplicate: only send once per label per day
         const lastSentKey = `${notifTime.label}_${localDate}`;
         const lastSent = user.notifications.lastSentAt?.get(lastSentKey);
-        if (lastSent) { skipped++; continue; }
+        if (lastSent) {
+          skipped++;
+          continue;
+        }
 
-        const alreadyLogged = await hasLoggedInMealPeriod(user._id, localDate, timezone, notifTime.hour);
-        if (alreadyLogged) { skipped++; continue; }
+        // Check if user logged anything in the past hour (for contextual message)
+        const recentMeal = await getRecentlyLoggedMeal(user._id, timezone);
 
-        const sent = await sendMealReminder(user, notifTime.label, currentBalance);
+        // ALWAYS send — use contextual message if recently logged
+        const sent = await sendMealNotification(user, notifTime.label, currentBalance, recentMeal);
+
         if (sent) {
           notificationsSent++;
           if (!user.notifications.lastSentAt) user.notifications.lastSentAt = new Map();
           user.notifications.lastSentAt.set(lastSentKey, new Date().toISOString());
           await user.save();
+        } else {
+          skipped++;
         }
       }
     }
+
     const elapsed = Date.now() - startTime;
-    res.json({ message: 'Cron completed', elapsedMs: elapsed, notificationsSent, skipped });
+    res.json({
+      message: 'Cron completed',
+      elapsedMs: elapsed,
+      notificationsSent,
+      skipped
+    });
   } catch (err) {
     console.error('[CRON] API endpoint error:', err.message);
     res.status(500).json({ error: 'Internal cron error' });
   }
 });
 
+// Export helpers for testing
 module.exports = router;
+module.exports._helpers = {
+  getCurrentLocalTime,
+  isInWindow,
+  getRecentlyLoggedMeal,
+  truncateMealName,
+  buildNotificationPayload,
+  sendMealNotification
+};

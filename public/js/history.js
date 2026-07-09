@@ -187,6 +187,15 @@ const HistoryPage = {
 
   _bindEvents(content) {
     // Meal options
+    content.querySelectorAll('.meal-history-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        const id = item.dataset.id;
+        const name = item.dataset.name;
+        const cals = item.dataset.cals;
+        this._showMealOptions(id, name, cals);
+      });
+    });
+
     content.querySelectorAll('.item-menu-btn[data-type="meal"]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -211,9 +220,21 @@ const HistoryPage = {
   },
 
   _showMealOptions(id, name, cals) {
+    const meal = (this.data?.meals?.meals || []).find(m => (m._id || m.id) === id);
+    const ingredientsHtml = meal && meal.ingredients && meal.ingredients.length > 0 
+      ? `<div class="ingredients-list" style="margin: 12px 0; max-height: 150px; overflow-y: auto; text-align: left; background: var(--bg-card); padding: 8px; border-radius: 8px;">` + 
+        meal.ingredients.map(ing => `
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px; padding-bottom:4px; border-bottom:1px solid var(--border);">
+            <span style="color:var(--text-1);">${this._esc(ing.name)} ${ing.amount ? `(${ing.amount}${ing.unit || 'g'})` : ''}</span>
+            <span style="color:var(--text-2);">${Math.round(ing.calories)} kcal</span>
+          </div>
+        `).join('') + `</div>`
+      : `<p style="color:var(--text-2);font-size:13px;margin:12px 0;">No ingredients logged</p>`;
+
     showModal(`
       <div class="modal-title">${this._esc(name)}</div>
       <p style="color:var(--text-2); font-size:0.875rem; margin-bottom:16px;">${cals} calories</p>
+      ${ingredientsHtml}
       <div class="modal-actions">
         <button class="btn btn-secondary btn-full" id="history-dispute">
           <i data-lucide="message-circle" class="icon-sm"></i> Dispute with Max

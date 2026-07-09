@@ -7,9 +7,33 @@ const PTConversation = require('../models/PTConversation');
 const MealLog = require('../models/MealLog');
 const WorkoutLog = require('../models/WorkoutLog');
 const DailyBalance = require('../models/DailyBalance');
-const { agentChat, agentChatWithTools, parseAIJson } = require('../utils/groq');
+const { agentChat, agentChatWithTools, parseAIJson, checkUserInput } = require('../utils/groq');
 const { reverseDeduction, addWorkoutCalories, getLocalDate, deductMealCalories } = require('../utils/balance');
 const { searchIngredient } = require('../utils/usda');
+
+// ── Inline pure helpers (NOT exported from groq so they are never mocked) ──
+const LEAK_PATTERNS = [
+  /<tool_call>/i,
+  /<\/tool_call>/i,
+  /\{"(USDA_search|searchUSDA|getRecentMeals|getRecentWorkouts|logFood|tool_call)":/,
+  /\[TOOL_CALL\]/i,
+  /"tool_calls"\s*:/,
+  /\btool_call_id\b/
+];
+function hasLeakedInternals(text) {
+  if (!text) return false;
+  return LEAK_PATTERNS.some(p => p.test(text));
+}
+function sanitiseAIResponse(text) {
+  if (!text) return text;
+  return text
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/\[TOOL_CALL\][\s\S]*?\[\/TOOL_CALL\]/gi, '')
+    .replace(/```tool_code[\s\S]*?```/gi, '')
+    .replace(/\{[^{}]*"(USDA_search|searchUSDA|getRecentMeals|getRecentWorkouts|logFood)"[^{}]*\}/g, '')
+    .trim();
+}
+
 
 // Load PT Coach system prompt from markdown file
 let PT_SYSTEM_PROMPT = '';
@@ -203,6 +227,17 @@ router.post('/chat', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
+    // Safeguard: check for prompt injection (fail-open on error)
+    try {
+      const safeCheck = await checkUserInput(message.trim());
+      if (!safeCheck.safe) {
+        return res.status(400).json({ error: 'Invalid input detected.' });
+      }
+    } catch (safeguardErr) {
+      console.warn('[PT-COACH] Safeguard check failed (fail-open):', safeguardErr.message);
+      // Fail open — allow the message through
+    }
+
     // Get or create conversation
     let conversation;
     if (conversationId) {
@@ -259,6 +294,20 @@ router.post('/chat', requireAuth, async (req, res) => {
       }
     }
 
+    // Detect leaked internals in the final text response; retry once if found
+    if (hasLeakedInternals(finalResponseText)) {
+      console.warn('[PT-COACH] Leaked internals in chat response, retrying...');
+      try {
+        const retryResponse = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 768);
+        if (!retryResponse.tool_calls || retryResponse.tool_calls.length === 0) {
+          finalResponseText = sanitiseAIResponse(retryResponse.content || finalResponseText);
+        }
+      } catch (retryErr) {
+        console.error('[PT-COACH] Retry failed:', retryErr.message);
+        finalResponseText = sanitiseAIResponse(finalResponseText);
+      }
+    }
+
     // Parse structured JSON verdict from PT Coach
     const { userMessage, decision } = parsePTResponse(finalResponseText);
 
@@ -300,6 +349,9 @@ router.post('/chat', requireAuth, async (req, res) => {
   }
 });
 
+// ── Exported helpers ────────────────────────────────────────────────────────
+module.exports.parsePTResponse = parsePTResponse;
+
 /**
  * Parse structured JSON verdict from PT Coach response.
  * Returns { userMessage, decision } where decision follows the action schema.
@@ -324,7 +376,7 @@ function parsePTResponse(rawResponse) {
   if (!parsed || typeof parsed.message !== 'string') {
     return {
       userMessage: rawResponse.trim(),
-      decision: { type: 'none', approved: false, caloriesAdjusted: null, note: null }
+      decision: { type: 'none', approved: false, caloriesAdjusted: null, ingredientName: null, ingredientCalories: null, ingredientAmount: null, note: null }
     };
   }
 
@@ -335,6 +387,9 @@ function parsePTResponse(rawResponse) {
       type:              action.type              || 'none',
       approved:          action.approved          ?? false,
       caloriesAdjusted:  action.caloriesAdjusted  ?? null,
+      ingredientName:    action.ingredientName    ?? null,
+      ingredientCalories:action.ingredientCalories?? null,
+      ingredientAmount:  action.ingredientAmount  ?? null,
       note:              action.note              ?? null,
       // Derived helpers used by handlePTDecision
       resolved: action.type !== 'none' && action.type !== undefined
@@ -347,7 +402,7 @@ function parsePTResponse(rawResponse) {
  * Uses the explicit decision.type from the structured JSON verdict.
  */
 async function handlePTDecision(decision, conversation, user) {
-  const { type, caloriesAdjusted, note } = decision;
+  const { type, caloriesAdjusted, ingredientName, ingredientCalories, ingredientAmount, note } = decision;
   const { referenceId, referenceType } = conversation.context;
 
   // Nothing to do for non-action types
@@ -394,6 +449,34 @@ async function handlePTDecision(decision, conversation, user) {
         await deductMealCalories(user._id, meal.localDate, diff);
       }
       return { action: 'meal_edited', oldCalories: oldCals, newCalories: caloriesAdjusted };
+    }
+
+    // ── Ingredient calorie edit ──────────────────────────────────────
+    if (type === 'approve_ingredient_edit') {
+      const meal = await MealLog.findOne({ _id: referenceId, userId: user._id });
+      if (!meal) return { action: 'error', reason: 'Meal not found' };
+      if (!ingredientName || ingredientCalories == null || ingredientAmount == null) return { action: 'error', reason: 'Missing ingredient update data' };
+
+      const ingredientIndex = meal.ingredients.findIndex(i => i.name.toLowerCase() === ingredientName.toLowerCase());
+      if (ingredientIndex === -1) return { action: 'error', reason: 'Ingredient not found in meal' };
+
+      const oldCals = meal.totalCalories;
+      meal.ingredients[ingredientIndex].calories = ingredientCalories;
+      meal.ingredients[ingredientIndex].amount = ingredientAmount;
+      
+      const newTotalCals = meal.ingredients.reduce((sum, i) => sum + i.calories, 0);
+      const diff = newTotalCals - oldCals;
+      
+      meal.editHistory.push({ editedAt: new Date(), previousCalories: oldCals, ptApproved: true, ptNote: note });
+      meal.totalCalories = newTotalCals;
+      await meal.save();
+
+      if (diff < 0) await reverseDeduction(user._id, meal.localDate, Math.abs(diff));
+      else if (diff > 0) {
+        const { deductMealCalories } = require('../utils/balance');
+        await deductMealCalories(user._id, meal.localDate, diff);
+      }
+      return { action: 'ingredient_edited', oldCalories: oldCals, newCalories: newTotalCals, updatedIngredient: ingredientName };
     }
 
     // ── Workout calorie adjustment ─────────────────────────────

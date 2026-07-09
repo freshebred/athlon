@@ -6,24 +6,26 @@
 const request    = require('supertest');
 const { buildApp, createUser, createMeal, createWorkout, createBalance, authHeader } = require('./helpers');
 const DailyBalance = require('../models/DailyBalance');
+const { getLocalDate } = require('../utils/balance');
 const { Types }  = require('mongoose');
 
-let app, user;
+let app, user, TODAY;
 
 beforeAll(() => {
   app = buildApp();
 });
 
 beforeEach(async () => {
+  TODAY = getLocalDate('America/Chicago');
   user = await createUser({ email: `balance-test-${Date.now()}@test.com` });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GET /api/balance/today', () => {
   it('should return today\'s balance with meals and workouts', async () => {
-    await createBalance(user._id);
-    await createMeal(user._id, { totalCalories: 500 });
-    await createWorkout(user._id, { caloriesBurnt: 200 });
+    await createBalance(user._id, { localDate: TODAY });
+    await createMeal(user._id,    { totalCalories: 500, localDate: TODAY });
+    await createWorkout(user._id, { caloriesBurnt: 200, localDate: TODAY });
 
     const res = await request(app)
       .get('/api/balance/today')
@@ -71,9 +73,9 @@ describe('GET /api/balance/today', () => {
   });
 
   it('should not include soft-deleted meals in listing', async () => {
-    await createBalance(user._id);
-    await createMeal(user._id, { isDeleted: true,  name: 'Deleted' });
-    await createMeal(user._id, { isDeleted: false, name: 'Active'  });
+    await createBalance(user._id, { localDate: TODAY });
+    await createMeal(user._id, { isDeleted: true,  name: 'Deleted', localDate: TODAY });
+    await createMeal(user._id, { isDeleted: false, name: 'Active',  localDate: TODAY });
 
     const res = await request(app)
       .get('/api/balance/today')
@@ -84,9 +86,9 @@ describe('GET /api/balance/today', () => {
   });
 
   it('should include meal macros in response', async () => {
-    await createBalance(user._id);
+    await createBalance(user._id, { localDate: TODAY });
     await createMeal(user._id, {
-      totalCalories: 400, totalProtein: 30, totalCarbs: 40, totalFat: 10
+      totalCalories: 400, totalProtein: 30, totalCarbs: 40, totalFat: 10, localDate: TODAY
     });
 
     const res = await request(app)
@@ -101,8 +103,8 @@ describe('GET /api/balance/today', () => {
   });
 
   it('should return finalCaloriesBurnt for workouts with PT adjustment', async () => {
-    await createBalance(user._id);
-    await createWorkout(user._id, { caloriesBurnt: 270, finalCaloriesBurnt: 350, ptDisputed: true });
+    await createBalance(user._id, { localDate: TODAY });
+    await createWorkout(user._id, { caloriesBurnt: 270, finalCaloriesBurnt: 350, ptDisputed: true, localDate: TODAY });
 
     const res = await request(app)
       .get('/api/balance/today')

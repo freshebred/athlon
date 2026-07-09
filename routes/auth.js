@@ -22,16 +22,12 @@ router.post('/register', async (req, res) => {
     }
 
     let user = await User.findOne({ email: email.toLowerCase() });
-    if (user && user.isVerified) {
+    if (user) {
       return res.status(409).json({ error: 'An account with this email already exists' });
     }
 
     if (!user) {
       user = new User({ name, email, password, isVerified: false });
-      await user.save();
-    } else {
-      user.name = name;
-      user.password = password;
       await user.save();
     }
 
