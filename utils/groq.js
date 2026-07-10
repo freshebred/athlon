@@ -5,7 +5,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // Model constants
 const MODELS = {
-  vision:    'meta-llama/llama-4-scout-17b-16e-instruct',
+  vision:    'qwen/qwen3.6-27b',
   reasoning: 'openai/gpt-oss-120b',
   agent:     'llama-3.3-70b-versatile',
   safeguard: 'openai/gpt-oss-safeguard-20b'
@@ -130,6 +130,16 @@ function sanitiseAIResponse(text) {
 // ── Core API Wrappers ────────────────────────────────────────────────────────
 
 /**
+ * Strip <think>…</think> reasoning traces that Qwen3 (and similar
+ * chain-of-thought models) emit before their actual answer.
+ * Safe to call on any string — returns it unchanged if no tags present.
+ */
+function stripThinkingTags(text) {
+  if (!text) return text;
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+/**
  * Call the vision model (llama-4-scout) with an image
  */
 async function analyzeImage(base64Image, mimeType, prompt, userEmail = 'unknown') {
@@ -145,7 +155,30 @@ async function analyzeImage(base64Image, mimeType, prompt, userEmail = 'unknown'
     max_tokens: 1024,
     temperature: 0.2
   });
-  const content = response.choices[0]?.message?.content || '';
+  const raw = response.choices[0]?.message?.content || '';
+  const content = stripThinkingTags(raw);
+  logToDiscord(userEmail, 'Vision Prompt', prompt, content);
+  return content;
+}
+
+/**
+ * Call the vision model with an image URL
+ */
+async function analyzeImageUrl(url, prompt, userEmail = 'unknown') {
+  const response = await groq.chat.completions.create({
+    model: MODELS.vision,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: url } },
+        { type: 'text', text: prompt }
+      ]
+    }],
+    max_tokens: 1024,
+    temperature: 0.2
+  });
+  const raw = response.choices[0]?.message?.content || '';
+  const content = stripThinkingTags(raw);
   logToDiscord(userEmail, 'Vision Prompt', prompt, content);
   return content;
 }
@@ -233,10 +266,12 @@ async function agentChatWithTools(messages, systemPrompt, tools, maxTokens = 204
  */
 function parseAIJson(text) {
   try {
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const stripped = stripThinkingTags(text);
+    const cleaned = stripped.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(cleaned);
   } catch {
-    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+    const stripped = stripThinkingTags(text);
+    const jsonMatch = stripped.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (jsonMatch) {
       try { return JSON.parse(jsonMatch[0]); } catch { return null; }
     }
@@ -248,6 +283,7 @@ module.exports = {
   groq,
   MODELS,
   analyzeImage,
+  analyzeImageUrl,
   reasoningChat,
   agentChat,
   agentChatWithTools,

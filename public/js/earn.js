@@ -1,5 +1,135 @@
 /* earn.js — Workout Logging Page (Earn calorie credits) */
 
+// ── Pixel-Dot Scan Overlay ─────────────────────────────────────────────────
+const WorkoutScanOverlay = {
+  _el: null,
+  _phase: 'scanning',
+
+  show(imageDataUrl, activityType) {
+    this._cleanup();
+    this._phase = 'scanning';
+
+    const el = document.createElement('div');
+    el.id = 'scan-overlay';
+    el.innerHTML = `
+      <img id="scan-image" src="${imageDataUrl}" />
+      <div class="scan-hud">
+        <div class="scan-activity-badge">
+          <span class="scan-activity-label">${activityType || 'Workout'}</span>
+        </div>
+        <div class="scan-status-row">
+          <div class="scan-pulse"></div>
+          <span class="scan-status-text" id="scan-status-text">AI Analyzing…</span>
+        </div>
+        <div class="scan-progress-bar"><div class="scan-progress-fill" id="scan-progress-fill"></div></div>
+      </div>
+      <div class="scan-approved-msg hidden" id="scan-approved-msg">
+        <div class="scan-approved-icon">🏆</div>
+        <div class="scan-approved-title">VERIFIED!</div>
+        <div class="scan-approved-sub" id="scan-approved-sub"></div>
+      </div>
+    `;
+    document.body.appendChild(el);
+    this._el = el;
+    this._startProgressBar();
+  },
+
+  showApproved(reason) {
+    this._phase = 'approved';
+    const msg = this._el?.querySelector('#scan-approved-msg');
+    const sub = this._el?.querySelector('#scan-approved-sub');
+    const hud = this._el?.querySelector('.scan-hud');
+    const img = this._el?.querySelector('#scan-image');
+    
+    if (hud) hud.classList.add('hidden');
+    if (img) {
+      img.style.animation = 'none'; // Stop pulsing
+      img.style.opacity = '1';
+    }
+    
+    if (sub) sub.textContent = reason || 'Great work! Calculating your calories…';
+    if (msg) msg.classList.remove('hidden');
+    this._spawnConfetti();
+  },
+
+  hide() {
+    if (this._el) {
+      this._el.style.transition = 'opacity 0.6s ease';
+      this._el.style.opacity = '0';
+      setTimeout(() => this._cleanup(), 650);
+    }
+  },
+
+  _cleanup() {
+    if (this._el) { this._el.remove(); this._el = null; }
+  },
+
+  _startProgressBar() {
+    const fill = this._el?.querySelector('#scan-progress-fill');
+    const statusText = this._el?.querySelector('#scan-status-text');
+    if (!fill) return;
+
+    const messages = [
+      'AI Analyzing…',
+      'Checking form & intensity…',
+      'Verifying activity match…',
+      'Cross-referencing signals…',
+      'Almost done…'
+    ];
+    let msgIdx = 0;
+    let pct = 0;
+
+    const tick = () => {
+      if (!this._el || this._phase !== 'scanning') return;
+      pct = Math.min(92, pct + (0.3 + Math.random() * 0.5));
+      fill.style.width = pct + '%';
+
+      const nextMsgAt = Math.floor((msgIdx + 1) * (90 / messages.length));
+      if (pct >= nextMsgAt && msgIdx < messages.length - 1) {
+        msgIdx++;
+        if (statusText) statusText.textContent = messages[msgIdx];
+      }
+
+      setTimeout(tick, 180);
+    };
+    tick();
+  },
+
+  _spawnConfetti() {
+    const COLORS = ['#00FF87','#F59E0B','#FF4757','#60A5FA','#F8FAFC','#A78BFA'];
+    const confettiCount = 120;
+
+    for (let i = 0; i < confettiCount; i++) {
+      const el = document.createElement('div');
+      el.className = 'confetti-piece';
+      const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      const size  = 8 + Math.random() * 10;
+      const startX = 20 + Math.random() * 60; // % from left
+      const dur   = 2.0 + Math.random() * 1.5;
+      const delay = Math.random() * 0.5;
+      const isCircle = Math.random() > 0.5;
+
+      el.style.cssText = `
+        position: fixed;
+        top: -20px;
+        left: ${startX}%;
+        width: ${size}px;
+        height: ${size}px;
+        background: ${color};
+        border-radius: ${isCircle ? '50%' : '2px'};
+        opacity: 1;
+        pointer-events: none;
+        z-index: 10001;
+        animation: confetti-fall ${dur}s ${delay}s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+        transform: rotate(${Math.random() * 360}deg);
+      `;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), (dur + delay + 0.2) * 1000);
+    }
+  }
+};
+
+// ── Main EarnPage ─────────────────────────────────────────────────────────
 const EarnPage = {
   state: {
     step: 'entry',      // 'entry' | 'verify' | 'result'
@@ -93,8 +223,8 @@ const EarnPage = {
         <textarea id="workout-desc" class="textarea" rows="2"
                   placeholder="e.g. 5km run at 6 min/km pace">${this.state.workout?.description || ''}</textarea>
 
-        <!-- Optional image proof -->
-        <div class="section-title-sm" style="margin-top:20px;">Proof Photo (optional)</div>
+        <!-- Required image proof -->
+        <div class="section-title-sm" style="margin-top:20px;">Proof Photo (Required)</div>
         <div class="image-upload-area compact" id="proof-drop-zone">
           <i data-lucide="camera" class="icon-sm"></i>
           <span>Upload workout screenshot or gym selfie</span>
@@ -163,7 +293,8 @@ const EarnPage = {
         ${verifyResult ? `
           <div class="ai-verdict-banner">
             <i data-lucide="${verifyResult.verified ? 'shield-check' : 'shield-alert'}" class="icon-sm"
-               style="color:${verifyResult.verified ? 'var(--accent)' : 'var(--gold)'};"></i>
+               style="color:${verifyResult.verified ? 'var(--accent)' : 'var(--gold)'};">
+            </i>
             <div>
               <div class="verdict-title">AI Image Verification</div>
               <div class="verdict-text">${this._esc(verifyResult.verdict || 'Photo checked.')}</div>
@@ -261,19 +392,48 @@ const EarnPage = {
 
       const btn = content.querySelector('#log-workout-btn');
       btn.disabled = true;
-      btn.innerHTML = `<i data-lucide="loader-2" class="icon-sm spin"></i> Estimating...`;
+      btn.innerHTML = `<i data-lucide="loader-2" class="icon-sm spin"></i> Verifying…`;
       if (window.lucide) lucide.createIcons({ nodes: [btn] });
 
       try {
-        // Verify image if provided
-        if (this.state.imageFile) {
-          const fd = new FormData();
-          fd.append('image', this.state.imageFile);
-          fd.append('activityType', selectedActivity);
-          this.state.verifyResult = await API.workouts.verifyImage(fd);
+        // Verify image (required)
+        if (!this.state.imageFile) {
+          showToast('Proof photo is required to log a workout.', 'warning');
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="zap" class="icon-sm"></i> Calculate Calories Earned`;
+          if (window.lucide) lucide.createIcons({ nodes: [btn] });
+          return;
         }
 
-        // Estimate calories
+        // ── Show full-screen pixel-dot scanning overlay ──────────────────
+        WorkoutScanOverlay.show(this.state.imageBase64, selectedActivity);
+
+        const fd = new FormData();
+        fd.append('image', this.state.imageFile);
+        fd.append('activityType', selectedActivity);
+        const verifyResult = await API.workouts.verifyImage(fd);
+
+        if (!verifyResult.verified) {
+          // Hide overlay (no confetti) and show rejection toast
+          WorkoutScanOverlay.hide();
+          showToast(`AI Rejected: ${verifyResult.reason || verifyResult.description}`, 'error', 5000);
+          this.state.imageFile = null;
+          this.state.imageBase64 = null;
+          content.querySelector('#proof-preview-wrap')?.classList.add('hidden');
+          const proofZone = content.querySelector('#proof-drop-zone');
+          if (proofZone) proofZone.classList.remove('hidden');
+
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="zap" class="icon-sm"></i> Calculate Calories Earned`;
+          if (window.lucide) lucide.createIcons({ nodes: [btn] });
+          return;
+        }
+
+        // ── Approved! Show celebration then continue ───────────────────
+        this.state.verifyResult = verifyResult;
+        WorkoutScanOverlay.showApproved(verifyResult.description || verifyResult.reason);
+
+        // Estimate calories while the celebration plays
         const result = await API.workouts.estimateCalories({
           activityType: selectedActivity,
           duration,
@@ -283,9 +443,16 @@ const EarnPage = {
         });
 
         this.state.calorieResult = result;
+
+        // Wait a beat so user can enjoy the moment, then transition
+        await new Promise(r => setTimeout(r, 2200));
+        WorkoutScanOverlay.hide();
+        await new Promise(r => setTimeout(r, 400));
+
         this.state.step = 'result';
         this.render();
       } catch (err) {
+        WorkoutScanOverlay.hide();
         showToast(err.message || 'Failed to estimate calories', 'error');
         btn.disabled = false;
         btn.innerHTML = `<i data-lucide="zap" class="icon-sm"></i> Calculate Calories Earned`;
@@ -334,8 +501,6 @@ const EarnPage = {
     });
 
     content.querySelector('#dispute-earn-btn')?.addEventListener('click', () => {
-      // We don't have a DB id yet — log first then dispute
-      // For now, log and then open dispute
       PTCoach.openWithContext({
         type: 'general',
         message: `Max, I just finished a ${this.state.workout?.duration}min ${this.state.workout?.activityType} workout at ${this.state.workout?.intensity} intensity. The system calculated ${Math.round(this.state.calorieResult?.caloriesBurnt || 0)} calories. Can you help me dispute that?`

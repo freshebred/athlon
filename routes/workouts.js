@@ -1,32 +1,64 @@
-const express = require('express');
-const router = express.Router();
-const multer = require('multer');
+const express  = require('express');
+const router   = express.Router();
+const multer   = require('multer');
+const crypto   = require('crypto');
+const fs       = require('fs');
+const path     = require('path');
 const { requireAuth } = require('../middleware/auth');
 const WorkoutLog = require('../models/WorkoutLog');
-const { analyzeImage, agentChat, parseAIJson } = require('../utils/groq');
+const { analyzeImageUrl, agentChat, parseAIJson } = require('../utils/groq');
 const { addWorkoutCalories, getLocalDate } = require('../utils/balance');
 
+// ── Temp upload directory (served as static by Express) ────────────────────
+const TEMP_DIR = path.join(__dirname, '../public/temp-uploads');
+
+// Ensure the temp directory exists
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true });
+}
+
+// On startup: purge any stale files older than 10 minutes left from a previous run
+(function cleanStaleTempFiles() {
+  try {
+    const TEN_MIN = 10 * 60 * 1000;
+    const now = Date.now();
+    fs.readdirSync(TEMP_DIR).forEach(file => {
+      const filePath = path.join(TEMP_DIR, file);
+      try {
+        const { mtimeMs } = fs.statSync(filePath);
+        if (now - mtimeMs > TEN_MIN) {
+          fs.unlinkSync(filePath);
+          console.log('[WORKOUTS] Purged stale temp file:', file);
+        }
+      } catch { /* ignore stat/unlink errors */ }
+    });
+  } catch { /* ignore read errors */ }
+})();
+
+// ── Multer: memory storage, 20 MB limit ────────────────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Only image files are allowed'));
   }
 });
 
-const WORKOUT_VERIFY_SYSTEM = `You are a fitness verification expert. Analyze the provided image and determine if the person is genuinely working out/exercising.
+// ── System Prompts ──────────────────────────────────────────────────────────
+
+const WORKOUT_VERIFY_SYSTEM = `You are a strict fitness verification expert. Analyze the provided image very closely to determine the user's actual intent. Are they genuinely working out/exercising, or just pretending?
 
 Respond with ONLY a JSON object:
 {
   "isWorkedOut": true or false,
   "confidence": "high" or "medium" or "low",
-  "description": "Brief description of what you see",
-  "reason": "Why you made this determination"
+  "description": "Detailed description of what you see, focusing on signs of genuine effort",
+  "reason": "Why you approved or rejected this image"
 }
 
-Be strict but fair. Signs of working out: gym equipment, workout clothes with visible effort/sweat, running/outdoor exercise, yoga poses, sports activities. 
-Be skeptical of: sitting on a couch "claiming" to exercise, just standing near gym equipment, clearly staged photos.`;
+Be very strict. Reject if there's any doubt about their intent. Signs of working out: gym equipment in use, workout clothes with visible effort/sweat, running/outdoor exercise in motion, sports activities. 
+Be highly skeptical of: sitting on a couch "claiming" to exercise, just standing near gym equipment without using it, selfies in mirrors without sweat, clearly staged photos. If rejected, provide a clear reason in 'reason'.`;
 
 const CALORIES_BURNED_SYSTEM = `You are a fitness calorie calculation expert. Given a workout description, estimate calories burned.
 
@@ -47,27 +79,75 @@ Respond with ONLY a JSON object:
 Note: adjustedEstimate = rawEstimate * 0.9 (10% conservative reduction is automatically applied).
 Use a standard 75kg body weight for calculations unless user weight is provided.`;
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Save the image buffer to a temp file and return:
+ *  - tempFilePath: absolute path on disk
+ *  - publicUrl:    publicly accessible URL for Groq to fetch
+ *
+ * The caller is responsible for deleting the file after use.
+ * A safety setTimeout also deletes it after 5 minutes.
+ */
+function saveTempImage(buffer, mimeType) {
+  const ext      = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+  const filename = `workout-${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const filePath = path.join(TEMP_DIR, filename);
+
+  fs.writeFileSync(filePath, buffer);
+
+  // Safety net: delete after 5 minutes in case the request crashes
+  const timer = setTimeout(() => {
+    try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+  }, 5 * 60 * 1000);
+
+  // Allow the process to exit without waiting for this timer
+  if (timer.unref) timer.unref();
+
+  const serverUrl = (process.env.SERVER_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const publicUrl = `${serverUrl}/temp-uploads/${filename}`;
+
+  return { filePath, publicUrl };
+}
+
+/**
+ * Delete a temp file immediately, swallowing any errors.
+ */
+function deleteTempFile(filePath) {
+  try { fs.unlinkSync(filePath); } catch { /* already deleted or never existed */ }
+}
+
 // ── POST /api/workouts/verify-image ────────────────────────────────────────
 router.post('/verify-image', requireAuth, upload.single('image'), async (req, res) => {
+  let tempFilePath = null;
+
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Image file is required' });
     }
 
-    const base64Image = req.file.buffer.toString('base64');
-    const mimeType = req.file.mimetype;
+    const { buffer, mimetype } = req.file;
 
-    const verdict = await analyzeImage(
-      base64Image,
-      mimeType,
-      'Is this person working out or exercising? Analyze carefully.',
-      req.user?.email
-    );
+    // ── 1. Save to temp dir and get a public URL for Groq ────────────────
+    const { filePath, publicUrl } = saveTempImage(buffer, mimetype);
+    tempFilePath = filePath;
+    console.log('[WORKOUTS] Temp image saved:', publicUrl);
 
-    // Parse AI verdict using JSON system prompt
+    // ── 2. Analyze with Groq vision model via public URL (supports 20 MB) ─
+    const { activityType } = req.body;
+    const activityContext = activityType
+      ? `The user claims they performed: "${activityType}". Verify that the image is consistent with this activity. `
+      : '';
+    const promptText = `${activityContext}Is this person working out or exercising? Does the image match the claimed activity? Analyze their intent very closely — are they genuinely exercising, or just posing/staging the photo? Respond with ONLY a JSON object: { "isWorkedOut": true or false, "confidence": "high" or "medium" or "low", "description": "Detailed description of what you see and how it matches or doesn't match the claimed activity", "reason": "Why you approved or rejected this as genuine workout proof" }`;
+    const verdict = await analyzeImageUrl(publicUrl, promptText, req.user?.email);
+
+    // ── 4. Delete temp file immediately — Groq is done fetching it ────────
+    deleteTempFile(filePath);
+    tempFilePath = null;
+
+    // ── 5. Parse AI verdict ───────────────────────────────────────────────
     let parsed = parseAIJson(verdict);
     if (!parsed) {
-      // Fallback: use agent to re-parse
       const reparse = await agentChat(
         [{ role: 'user', content: `The image analysis says: "${verdict}". Extract JSON verdict.` }],
         WORKOUT_VERIFY_SYSTEM,
@@ -82,13 +162,15 @@ router.post('/verify-image', requireAuth, upload.single('image'), async (req, re
     }
 
     res.json({
-      verified: parsed.isWorkedOut,
-      confidence: parsed.confidence,
-      description: parsed.description,
-      reason: parsed.reason,
-      imageBase64: `data:${mimeType};base64,${base64Image}`
+      verified:     parsed.isWorkedOut,
+      confidence:   parsed.confidence,
+      description:  parsed.description,
+      reason:       parsed.reason,
+      imageBase64: `data:${mimetype};base64,${buffer.toString('base64')}`
     });
   } catch (err) {
+    // Ensure cleanup even on crash
+    if (tempFilePath) deleteTempFile(tempFilePath);
     console.error('[WORKOUTS] Verify image error:', err.message);
     res.status(500).json({ error: 'Failed to verify workout image.' });
   }
@@ -127,7 +209,7 @@ Calculate calories burned.`;
     }
 
     // Ensure 10% reduction is applied
-    const rawEstimate = estimate.rawEstimate || 300;
+    const rawEstimate      = estimate.rawEstimate || 300;
     const adjustedEstimate = Math.round(rawEstimate * 0.9);
 
     res.json({
@@ -135,7 +217,7 @@ Calculate calories burned.`;
       adjustedEstimate,
       reasoning: estimate.reasoning,
       intensity: estimate.intensity || intensity || 'moderate',
-      met: estimate.met
+      met:       estimate.met
     });
   } catch (err) {
     console.error('[WORKOUTS] Estimate error:', err.message);
@@ -160,16 +242,16 @@ router.post('/log', requireAuth, async (req, res) => {
     const localDate = getLocalDate(user.profile?.timezone);
 
     const workout = new WorkoutLog({
-      userId: user._id,
+      userId:           user._id,
       activityType,
-      duration: Number(duration),
-      intensity: intensity || 'moderate',
+      duration:         Number(duration),
+      intensity:        intensity || 'moderate',
       description,
-      imageVerified: imageVerified || false,
+      imageVerified:    imageVerified || false,
       aiImageVerdict,
       imageBase64,
       rawCaloriesBurnt: rawCaloriesBurnt || Math.round(Number(caloriesBurnt) / 0.9),
-      caloriesBurnt: Number(caloriesBurnt),
+      caloriesBurnt:    Number(caloriesBurnt),
       finalCaloriesBurnt: Number(caloriesBurnt),
       localDate
     });
@@ -182,15 +264,15 @@ router.post('/log', requireAuth, async (req, res) => {
     res.status(201).json({
       message: 'Workout logged! Calories earned added to your balance.',
       workout: {
-        id: workout._id,
+        id:           workout._id,
         activityType: workout.activityType,
-        duration: workout.duration,
+        duration:     workout.duration,
         caloriesBurnt: workout.caloriesBurnt,
-        loggedAt: workout.loggedAt
+        loggedAt:     workout.loggedAt
       },
       balance: {
         currentBalance: balance.currentBalance,
-        caloriesBurnt: balance.caloriesBurnt
+        caloriesBurnt:  balance.caloriesBurnt
       }
     });
   } catch (err) {
@@ -202,7 +284,7 @@ router.post('/log', requireAuth, async (req, res) => {
 // ── GET /api/workouts/today ─────────────────────────────────────────────────
 router.get('/today', requireAuth, async (req, res) => {
   try {
-    const user = req.user;
+    const user      = req.user;
     const localDate = getLocalDate(user.profile?.timezone);
 
     const workouts = await WorkoutLog.find({
@@ -213,7 +295,7 @@ router.get('/today', requireAuth, async (req, res) => {
     res.json({ workouts, localDate });
   } catch (err) {
     console.error('[WORKOUTS] Today error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch today\'s workouts.' });
+    res.status(500).json({ error: "Failed to fetch today's workouts." });
   }
 });
 
