@@ -7,10 +7,10 @@ const { analyzeImage, reasoningChat, agentChat, parseAIJson, checkUserInput } = 
 const { searchIngredient, calcCalories } = require('../utils/usda');
 const { deductMealCalories, reverseDeduction, getLocalDate, getTodayBalance } = require('../utils/balance');
 
-// Multer config for image uploads (memory storage, max 5MB)
+// Multer config for image uploads (memory storage, max 20MB)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Only image files are allowed'));

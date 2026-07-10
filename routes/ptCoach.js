@@ -275,7 +275,7 @@ router.post('/chat', requireAuth, async (req, res) => {
     let toolLoop = true;
     let uiToolCalls = [];
     while (toolLoop) {
-      const response = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 768);
+      const response = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 1024);
       if (response.tool_calls && response.tool_calls.length > 0) {
         const toolMsg = { role: 'assistant', content: response.content || '', tool_calls: response.tool_calls };
         historyMessages.push(toolMsg);
@@ -298,7 +298,7 @@ router.post('/chat', requireAuth, async (req, res) => {
     if (hasLeakedInternals(finalResponseText)) {
       console.warn('[PT-COACH] Leaked internals in chat response, retrying...');
       try {
-        const retryResponse = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 768);
+        const retryResponse = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 1024);
         if (!retryResponse.tool_calls || retryResponse.tool_calls.length === 0) {
           finalResponseText = sanitiseAIResponse(retryResponse.content || finalResponseText);
         }
@@ -585,7 +585,7 @@ router.post('/start-dispute', requireAuth, async (req, res) => {
     let uiToolCalls = [];
     
     while (toolLoop) {
-      const response = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 768);
+      const response = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 1024);
       if (response.tool_calls && response.tool_calls.length > 0) {
         const toolMsg = { role: 'assistant', content: response.content || '', tool_calls: response.tool_calls };
         historyMessages.push(toolMsg);
@@ -601,6 +601,20 @@ router.post('/start-dispute', requireAuth, async (req, res) => {
       } else {
         finalResponseText = response.content || '';
         toolLoop = false;
+      }
+    }
+
+    // Detect leaked internals; retry once if found
+    if (hasLeakedInternals(finalResponseText)) {
+      console.warn('[PT-COACH] Leaked internals in start-dispute response, retrying...');
+      try {
+        const retryResponse = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 1024);
+        if (!retryResponse.tool_calls || retryResponse.tool_calls.length === 0) {
+          finalResponseText = sanitiseAIResponse(retryResponse.content || finalResponseText);
+        }
+      } catch (retryErr) {
+        console.error('[PT-COACH] start-dispute retry failed:', retryErr.message);
+        finalResponseText = sanitiseAIResponse(finalResponseText);
       }
     }
 

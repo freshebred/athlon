@@ -90,7 +90,7 @@ const LogPage = {
           <div class="image-upload-area" id="image-drop-zone">
             <div class="upload-icon"><i data-lucide="image-plus" class="icon-lg"></i></div>
             <div class="upload-text">Tap to take a photo or upload</div>
-            <div class="upload-sub">Max 5MB · JPEG, PNG, WEBP</div>
+            <div class="upload-sub">Max 20MB · JPEG, PNG, WEBP</div>
             <input type="file" id="image-file-input" accept="image/*" capture="environment" hidden>
           </div>
           <div id="image-preview-wrap" class="hidden">
