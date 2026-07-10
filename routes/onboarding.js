@@ -82,7 +82,7 @@ router.post('/chat', requireAuth, async (req, res) => {
       });
     }
 
-    const response = await agentChat(aiMessages, ONBOARDING_SYSTEM, 512);
+    const response = await agentChat(aiMessages, ONBOARDING_SYSTEM, 512, req.user?.email);
 
     // Check if onboarding is complete (AI returned JSON)
     const parsed = parseAIJson(response);

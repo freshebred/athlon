@@ -11,6 +11,36 @@ const MODELS = {
   safeguard: 'openai/gpt-oss-safeguard-20b'
 };
 
+// ── Discord Logging ────────────────────────────────────────────────────────
+async function logToDiscord(userEmail, systemPrompt, userPrompt, aiResponse) {
+  if (!process.env.DISCORD_LOG) return;
+  try {
+    const time = new Date().toLocaleString();
+    let desc = `**System Prompt**\n\`\`\`\n${(systemPrompt || 'N/A').substring(0, 1000)}\n\`\`\`\n`;
+    desc += `**User Prompt**\n\`\`\`\n${(userPrompt || 'N/A').substring(0, 1000)}\n\`\`\`\n`;
+    desc += `**AI Response**\n\`\`\`\n${(aiResponse || 'N/A').substring(0, 1500)}\n\`\`\``;
+
+    const embed = {
+      title: 'Groq API Request Log',
+      color: 0x00ff00,
+      timestamp: new Date().toISOString(),
+      description: desc,
+      fields: [
+        { name: 'Time', value: time, inline: true },
+        { name: 'User Email', value: userEmail || 'unknown', inline: true }
+      ]
+    };
+
+    await fetch(process.env.DISCORD_LOG, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embeds: [embed] })
+    });
+  } catch (err) {
+    console.error('[DISCORD LOG ERROR]', err.message);
+  }
+}
+
 // ── Safeguard ────────────────────────────────────────────────────────────────
 
 /**
@@ -102,7 +132,7 @@ function sanitiseAIResponse(text) {
 /**
  * Call the vision model (llama-4-scout) with an image
  */
-async function analyzeImage(base64Image, mimeType, prompt) {
+async function analyzeImage(base64Image, mimeType, prompt, userEmail = 'unknown') {
   const response = await groq.chat.completions.create({
     model: MODELS.vision,
     messages: [{
@@ -115,30 +145,35 @@ async function analyzeImage(base64Image, mimeType, prompt) {
     max_tokens: 1024,
     temperature: 0.2
   });
-  return response.choices[0]?.message?.content || '';
+  const content = response.choices[0]?.message?.content || '';
+  logToDiscord(userEmail, 'Vision Prompt', prompt, content);
+  return content;
 }
 
 /**
  * Call the reasoning model (gpt-oss-120b) for complex assessment tasks
  */
-async function reasoningChat(messages, systemPrompt) {
+async function reasoningChat(messages, systemPrompt, userEmail = 'unknown') {
   const response = await groq.chat.completions.create({
     model: MODELS.reasoning,
     messages: [
       { role: 'system', content: systemPrompt },
       ...messages
     ],
-    max_tokens: 2048,
+    max_tokens: 8192,
     temperature: 0.3
   });
-  return response.choices[0]?.message?.content || '';
+  const content = response.choices[0]?.message?.content || '';
+  const userPromptStr = messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n');
+  logToDiscord(userEmail, systemPrompt, userPromptStr, content);
+  return content;
 }
 
 /**
  * Call the main agent model (llama-3.3-70b) for general tasks.
  * Automatically retries once if the response contains leaked internals.
  */
-async function agentChat(messages, systemPrompt, maxTokens = 1024) {
+async function agentChat(messages, systemPrompt, maxTokens = 2048, userEmail = 'unknown') {
   const attemptChat = async () => {
     const response = await groq.chat.completions.create({
       model: MODELS.agent,
@@ -157,14 +192,17 @@ async function agentChat(messages, systemPrompt, maxTokens = 1024) {
     console.warn('[GROQ] Leaked internals detected, retrying...');
     result = await attemptChat();
   }
-  return sanitiseAIResponse(result);
+  const cleaned = sanitiseAIResponse(result);
+  const userPromptStr = messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n');
+  logToDiscord(userEmail, systemPrompt, userPromptStr, cleaned);
+  return cleaned;
 }
 
 /**
  * Call the agent model with tools enabled.
  * Returns the complete message object (content, tool_calls, etc).
  */
-async function agentChatWithTools(messages, systemPrompt, tools, maxTokens = 1024) {
+async function agentChatWithTools(messages, systemPrompt, tools, maxTokens = 2048, userEmail = 'unknown') {
   const payload = {
     model: MODELS.agent,
     messages: [
@@ -183,6 +221,10 @@ async function agentChatWithTools(messages, systemPrompt, tools, maxTokens = 102
   if (msg && msg.content) {
     msg.content = sanitiseAIResponse(msg.content);
   }
+  
+  const userPromptStr = messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n');
+  logToDiscord(userEmail, systemPrompt, userPromptStr, msg?.content || JSON.stringify(msg?.tool_calls));
+  
   return msg;
 }
 

@@ -60,7 +60,8 @@ router.post('/verify-image', requireAuth, upload.single('image'), async (req, re
     const verdict = await analyzeImage(
       base64Image,
       mimeType,
-      'Is this person working out or exercising? Analyze carefully.'
+      'Is this person working out or exercising? Analyze carefully.',
+      req.user?.email
     );
 
     // Parse AI verdict using JSON system prompt
@@ -70,7 +71,8 @@ router.post('/verify-image', requireAuth, upload.single('image'), async (req, re
       const reparse = await agentChat(
         [{ role: 'user', content: `The image analysis says: "${verdict}". Extract JSON verdict.` }],
         WORKOUT_VERIFY_SYSTEM,
-        256
+        256,
+        req.user?.email
       );
       parsed = parseAIJson(reparse);
       if (!parsed) {
@@ -114,7 +116,8 @@ Calculate calories burned.`;
     const response = await agentChat(
       [{ role: 'user', content: prompt }],
       CALORIES_BURNED_SYSTEM,
-      256
+      256,
+      req.user?.email
     );
 
     const estimate = parseAIJson(response);

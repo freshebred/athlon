@@ -175,9 +175,9 @@ IMPORTANT RESPONSE FORMAT — respond ONLY with valid JSON:
     {
       "name": "ingredient name",
       "issue": "brief description of the problem",
-      "suggestedAmount": 100,
+      "suggestedAmount": 100, // MUST BE A NUMBER ONLY (e.g., 100, not "100g")
       "suggestedAmountUnit": "g",
-      "suggestedCalories": 165,
+      "suggestedCalories": 165, // MUST BE A NUMBER ONLY
       "reason": "why this change makes sense"
     }
   ],
@@ -212,9 +212,9 @@ Respond ONLY with valid JSON:
   "suggestedCorrections": [
     {
       "ingredientName": "name",
-      "suggestedAmount": number,
+      "suggestedAmount": number, // MUST BE A NUMBER ONLY (e.g., 5, not "5g")
       "suggestedAmountUnit": "unit",
-      "suggestedCalories": number,
+      "suggestedCalories": number, // MUST BE A NUMBER ONLY
       "reason": "brief reason"
     }
   ]
@@ -253,7 +253,8 @@ router.post('/analyze-name', requireAuth, async (req, res) => {
     const prompt = `List all possible ingredients for: "${mealName.trim()}"`;
     const response = await reasoningChat(
       [{ role: 'user', content: prompt }],
-      INGREDIENT_SYSTEM
+      INGREDIENT_SYSTEM,
+      req.user?.email
     );
 
     const ingredients = parseAIJson(response);
@@ -291,7 +292,7 @@ router.post('/analyze-image', requireAuth, upload.single('image'), async (req, r
 - Cooking method if apparent
 Be specific and thorough for nutritional analysis purposes.`;
 
-    const description = await analyzeImage(base64Image, mimeType, visionPrompt);
+    const description = await analyzeImage(base64Image, mimeType, visionPrompt, req.user?.email);
 
     // Step 2: Reasoning model assesses ingredients from description
     const ingredientPrompt = `Based on this food description: "${description}"
@@ -300,7 +301,8 @@ List ALL possible ingredients in this meal.`;
 
     const ingredientResponse = await reasoningChat(
       [{ role: 'user', content: ingredientPrompt }],
-      INGREDIENT_SYSTEM
+      INGREDIENT_SYSTEM,
+      req.user?.email
     );
 
     const ingredients = parseAIJson(ingredientResponse);
@@ -371,7 +373,7 @@ router.post('/usda-lookup', requireAuth, async (req, res) => {
 
     const results = await Promise.all(
       ingredients.map(async (ing) => {
-        return await lookupIngredientWithRetry(ing);
+        return await lookupIngredientWithRetry(ing, req.user?.email);
       })
     );
 
@@ -386,7 +388,7 @@ router.post('/usda-lookup', requireAuth, async (req, res) => {
  * Look up an ingredient with automatic AI-powered retry on poor results.
  * Accepts both amountGrams directly and amount+unit for unit-based ingredients.
  */
-async function lookupIngredientWithRetry(ing) {
+async function lookupIngredientWithRetry(ing, userEmail) {
   const { name } = ing;
   // Support both old API (amountGrams) and new (amount + unit → amountGrams)
   const amountGrams = ing.amountGrams
@@ -409,7 +411,8 @@ async function lookupIngredientWithRetry(ing) {
       const retryResponse = await agentChat(
         [{ role: 'user', content: `Ingredient: "${name}", USDA search returned ${bestMatch ? `${bestMatch.caloriesPer100g} cal/100g` : 'no results'}. Better search term?` }],
         USDA_RETRY_SYSTEM,
-        256
+        256,
+        userEmail
       );
       const retryData = parseAIJson(retryResponse);
 
@@ -494,7 +497,8 @@ Please verify this meal's calorie accuracy.`;
     const response = await agentChat(
       [{ role: 'user', content: verifyPrompt }],
       VERIFY_SYSTEM,
-      512
+      2048,
+      req.user?.email
     );
 
     const verdict = parseAIJson(response);
@@ -567,7 +571,8 @@ Please review these user edits.`;
     const response = await agentChat(
       [{ role: 'user', content: editPrompt }],
       VERIFY_AFTER_EDIT_SYSTEM,
-      512
+      2048,
+      req.user?.email
     );
 
     const verdict = parseAIJson(response);
@@ -610,7 +615,7 @@ router.post('/log', requireAuth, async (req, res) => {
 
     const localDate = getLocalDate(user.profile?.timezone);
 
-    const totalCalories = ingredients.reduce((sum, i) => sum + (i.calories || 0), 0);
+    const totalCalories = ingredients.reduce((sum, i) => sum + (Number(i.calories) || 0), 0);
     const totalProtein  = ingredients.reduce((sum, i) => sum + (i.protein  || 0), 0);
     const totalCarbs    = ingredients.reduce((sum, i) => sum + (i.carbs    || 0), 0);
     const totalFat      = ingredients.reduce((sum, i) => sum + (i.fat      || 0), 0);

@@ -241,7 +241,7 @@ const LogPage = {
   // ── Step 3: Confirm ────────────────────────────────────────────────────────
   _renderConfirm() {
     const selected = this.state.ingredients.filter(i => i.selected);
-    const totalCals    = selected.reduce((s, i) => s + (i.calories || 0), 0);
+    const totalCals    = selected.reduce((s, i) => s + (Number(i.calories) || 0), 0);
     const totalProtein = selected.reduce((s, i) => s + (i.protein  || 0), 0);
     const totalCarbs   = selected.reduce((s, i) => s + (i.carbs    || 0), 0);
     const totalFat     = selected.reduce((s, i) => s + (i.fat      || 0), 0);
@@ -305,7 +305,7 @@ const LogPage = {
               <div class="flagged-ingredient-card" data-fi-idx="${idx}">
                 <div class="fi-name">${this._esc(fi.name)}</div>
                 <div class="fi-issue">${this._esc(fi.issue)}</div>
-                <div class="fi-suggestion">Suggested: ${fi.suggestedAmount || ''}${fi.suggestedAmountUnit || ''} → ~${fi.suggestedCalories ?? '?'} kcal</div>
+                <div class="fi-suggestion">Suggested: ${fi.suggestedAmount !== undefined ? parseFloat(fi.suggestedAmount) : ''}${fi.suggestedAmountUnit || ''} → ~${fi.suggestedCalories ?? '?'} kcal</div>
                 <div class="fi-actions" id="fi-actions-${idx}">
                   <button class="btn btn-sm" style="background:var(--accent-dim);color:var(--accent);border-radius:99px;" data-fi-action="apply" data-fi-idx="${idx}">
                     ✓ Apply
@@ -356,7 +356,7 @@ const LogPage = {
               <div class="flagged-ingredient-card" data-ec-idx="${idx}">
                 <div class="fi-name">${this._esc(sc.ingredientName)}</div>
                 <div class="fi-issue">${this._esc(sc.reason)}</div>
-                <div class="fi-suggestion">Suggested: ${sc.suggestedAmount || ''}${sc.suggestedAmountUnit || ''} → ~${sc.suggestedCalories ?? '?'} kcal</div>
+                <div class="fi-suggestion">Suggested: ${sc.suggestedAmount !== undefined ? parseFloat(sc.suggestedAmount) : ''}${sc.suggestedAmountUnit || ''} → ~${sc.suggestedCalories ?? '?'} kcal</div>
                 <div class="fi-actions" id="ec-actions-${idx}">
                   <button class="btn btn-sm" style="background:var(--accent-dim);color:var(--accent);border-radius:99px;" data-ec-action="apply" data-ec-idx="${idx}">✓ Apply</button>
                   <button class="btn btn-sm" style="background:var(--surface-3);color:var(--text-2);border-radius:99px;" data-ec-action="custom" data-ec-idx="${idx}">✎ Custom</button>
@@ -761,7 +761,7 @@ const LogPage = {
 
       const totalCals = this.state.ingredients
         .filter(i => i.selected)
-        .reduce((s, i) => s + (i.calories || 0), 0);
+        .reduce((s, i) => s + (Number(i.calories) || 0), 0);
 
       // Show a brief "Max is reviewing…" text while verify runs
       this._setButtonLoading(btn, 'Max is reviewing your meal...');
@@ -790,7 +790,7 @@ const LogPage = {
     this._setButtonLoading(btn, 'Asking Max...');
 
     const selected = this.state.ingredients.filter(i => i.selected);
-    const totalCals = selected.reduce((s, i) => s + (i.calories || 0), 0);
+    const totalCals = selected.reduce((s, i) => s + (Number(i.calories) || 0), 0);
 
     try {
       const editVerdict = await API.meals.verifyEdit({
@@ -1095,11 +1095,11 @@ const LogPage = {
     const ing = this.state.ingredients.find(i => i.name.toLowerCase() === fi.name.toLowerCase());
     if (!ing) return;
     if (fi.suggestedAmount !== undefined) {
-      ing.amount = fi.suggestedAmount;
+      ing.amount = parseFloat(fi.suggestedAmount) || 0;
       if (fi.suggestedAmountUnit) ing.unit = fi.suggestedAmountUnit;
-      ing.amountGrams = this._toGrams(fi.suggestedAmount, fi.suggestedAmountUnit || ing.unit, ing.name);
+      ing.amountGrams = this._toGrams(ing.amount, fi.suggestedAmountUnit || ing.unit, ing.name);
     }
-    if (fi.suggestedCalories !== undefined) ing.calories = fi.suggestedCalories;
+    if (fi.suggestedCalories !== undefined) ing.calories = Number(fi.suggestedCalories) || 0;
     this.state.userMadeEdits = true;
     this.state.aiVerdict.flaggedIngredients = this.state.aiVerdict.flaggedIngredients.filter(f => f.name !== fi.name);
     this.state.editVerdict = null;
@@ -1110,11 +1110,11 @@ const LogPage = {
     const ing = this.state.ingredients.find(i => i.name.toLowerCase() === (sc.ingredientName || '').toLowerCase());
     if (!ing) return;
     if (sc.suggestedAmount !== undefined) {
-      ing.amount = sc.suggestedAmount;
+      ing.amount = parseFloat(sc.suggestedAmount) || 0;
       if (sc.suggestedAmountUnit) ing.unit = sc.suggestedAmountUnit;
-      ing.amountGrams = this._toGrams(sc.suggestedAmount, sc.suggestedAmountUnit || ing.unit, ing.name);
+      ing.amountGrams = this._toGrams(ing.amount, sc.suggestedAmountUnit || ing.unit, ing.name);
     }
-    if (sc.suggestedCalories !== undefined) ing.calories = sc.suggestedCalories;
+    if (sc.suggestedCalories !== undefined) ing.calories = Number(sc.suggestedCalories) || 0;
     this.state.editVerdict = null;
     this.state.userMadeEdits = true;
     this.render();
