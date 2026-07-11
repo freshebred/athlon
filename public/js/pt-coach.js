@@ -12,7 +12,7 @@ const PTCoach = {
   _leakPatterns: [
     /<tool_call>/i,
     /<\/tool_call>/i,
-    /\{"(searchUSDA|getRecentMeals|getRecentWorkouts|getUserInformation|scheduleCheckIn|cancelCheckIn|getActiveCheckIns|reportUnsupportedCapability)":/,
+    /\{"(searchUSDA|getRecentMeals|getRecentWorkouts|logFood|getUserInformation|scheduleCheckIn|cancelCheckIn|getActiveCheckIns|reportUnsupportedCapability)":/,
     /\[TOOL_CALL\]/i,
     /"tool_calls"\s*:/,
     /\btool_call_id\b/
@@ -477,6 +477,9 @@ const PTCoach = {
         text = `Max checked your recent meals`;
       } else if (call.name === 'getRecentWorkouts') {
         text = `Max checked your recent workouts`;
+      } else if (call.name === 'logFood') {
+        let args = {}; try { args = JSON.parse(call.args); } catch(e){}
+        text = `Max logged ${args.name} (${args.calories} cals)`;
       } else if (call.name === 'getUserInformation') {
         text = `Max checked your profile information`;
       } else if (call.name === 'scheduleCheckIn') {

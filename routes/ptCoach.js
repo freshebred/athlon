@@ -17,7 +17,7 @@ const { searchIngredient } = require('../utils/usda');
 const LEAK_PATTERNS = [
   /<tool_call>/i,
   /<\/tool_call>/i,
-  /\{"(USDA_search|searchUSDA|getRecentMeals|getRecentWorkouts|getUserInformation|scheduleCheckIn|cancelCheckIn|getActiveCheckIns|reportUnsupportedCapability|tool_call)":/,
+  /\{"(USDA_search|searchUSDA|getRecentMeals|getRecentWorkouts|logFood|getUserInformation|scheduleCheckIn|cancelCheckIn|getActiveCheckIns|reportUnsupportedCapability|tool_call)":/,
   /\[TOOL_CALL\]/i,
   /"tool_calls"\s*:/,
   /\btool_call_id\b/
@@ -34,7 +34,7 @@ function sanitiseAIResponse(text) {
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
     .replace(/\[TOOL_CALL\][\s\S]*?\[\/TOOL_CALL\]/gi, '')
     .replace(/```tool_code[\s\S]*?```/gi, '')
-    .replace(/\{[^{}]*"(USDA_search|searchUSDA|getRecentMeals|getRecentWorkouts|getUserInformation|scheduleCheckIn|cancelCheckIn|getActiveCheckIns|reportUnsupportedCapability)"[^{}]*\}/g, '')
+    .replace(/\{[^{}]*"(USDA_search|searchUSDA|getRecentMeals|getRecentWorkouts|logFood|getUserInformation|scheduleCheckIn|cancelCheckIn|getActiveCheckIns|reportUnsupportedCapability)"[^{}]*\}/g, '')
     .trim();
 }
 
