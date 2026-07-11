@@ -193,7 +193,7 @@ const HomePage = {
   },
 
   _workoutCard(w) {
-    const cals = Math.round(w.finalCaloriesBurnt || w.caloriesBurnt || 0);
+    const cals = Math.round(w.finalCaloriesBurnt ?? w.caloriesBurnt ?? 0);
     return `
       <div class="item-card workout-item" data-id="${w._id || w.id}" data-name="${esc(w.activityType || 'Workout')}">
         <div class="item-icon-wrap workout">

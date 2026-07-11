@@ -130,7 +130,7 @@ const HistoryPage = {
   _renderDayGroup(date, dayData) {
     const { meals, workouts, balance } = dayData;
     const totalConsumed = meals.reduce((s, m) => s + (m.totalCalories || 0), 0);
-    const totalEarned   = workouts.reduce((s, w) => s + (w.finalCaloriesBurnt || w.caloriesBurnt || 0), 0);
+    const totalEarned   = workouts.reduce((s, w) => s + (w.finalCaloriesBurnt ?? w.caloriesBurnt ?? 0), 0);
     const netBalance    = balance?.currentBalance;
     const isPositive    = netBalance >= 0;
 
@@ -175,7 +175,7 @@ const HistoryPage = {
               <div class="item-name">${this._esc(w.activityType)}</div>
               <div class="item-meta">${formatTime(w.loggedAt)} · ${w.duration}min · ${w.intensity}</div>
             </div>
-            <div class="item-amount earned">+${Math.round(w.finalCaloriesBurnt || w.caloriesBurnt || 0)}</div>
+            <div class="item-amount earned">+${Math.round(w.finalCaloriesBurnt ?? w.caloriesBurnt ?? 0)}</div>
             <button class="item-menu-btn" data-id="${w._id || w.id}" data-type="workout" aria-label="Options">
               <i data-lucide="more-vertical" class="icon-sm"></i>
             </button>

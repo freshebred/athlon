@@ -28,6 +28,7 @@ const PTCoach = {
     const overlay  = document.getElementById('pt-overlay');
     const drawer   = document.getElementById('pt-drawer');
     const closeBtn = document.getElementById('pt-close');
+    const newChatBtn = document.getElementById('pt-new-chat');
     const sendBtn  = document.getElementById('pt-send');
     const input    = document.getElementById('pt-input');
 
@@ -35,6 +36,7 @@ const PTCoach = {
 
     fab.addEventListener('click', () => this.toggle());
     closeBtn?.addEventListener('click', () => this.close());
+    newChatBtn?.addEventListener('click', () => this.clearChat());
     overlay?.addEventListener('click', () => this.close());
     sendBtn?.addEventListener('click', () => this._sendMessage());
 
@@ -98,9 +100,35 @@ const PTCoach = {
       drawer?.classList.add('hidden');
     }, 280);
 
+    this.dismissUnresolvedActions();
     this.isOpen = false;
     this.pendingContext = null;
     document.body.style.overflow = '';
+  },
+
+  clearChat() {
+    this.dismissUnresolvedActions();
+    this.conversationId = null;
+    sessionStorage.removeItem('athlon_pt_conv');
+    const messages = document.getElementById('pt-messages');
+    if (messages) messages.innerHTML = '';
+    this._addBotMessage(this._getGreeting());
+  },
+
+  dismissUnresolvedActions() {
+    const unresolved = document.querySelectorAll('.unresolved-action');
+    unresolved.forEach(card => {
+      const actionId = card.dataset.actionId;
+      card.classList.remove('unresolved-action');
+      card.style.opacity = '0.5';
+      card.innerHTML = `<div style="font-size: 12px; color: var(--text-secondary); margin-left: 2rem;">Dismissed</div>`;
+      if (this.conversationId && actionId) {
+        // Silently reject
+        if (typeof API !== 'undefined' && API.ptCoach) {
+          API.ptCoach.actionReject(this.conversationId, actionId).catch(() => {});
+        }
+      }
+    });
   },
 
   /**
@@ -139,6 +167,8 @@ const PTCoach = {
     const input = document.getElementById('pt-input');
     const text  = overrideText || input?.value?.trim();
     if (!text || this.isTyping) return;
+
+    this.dismissUnresolvedActions();
 
     if (!overrideText && input) {
       input.value = '';
@@ -319,8 +349,9 @@ const PTCoach = {
 
     actions.forEach(action => {
       const msg = document.createElement('div');
-      msg.className = 'chat-message bot-message pending-action-card';
+      msg.className = 'chat-message bot-message pending-action-card unresolved-action';
       msg.id = `pending-action-${action.id}`;
+      msg.dataset.actionId = action.id;
       
       let title = "Max wants to modify your data";
       let details = "";
@@ -331,10 +362,9 @@ const PTCoach = {
         title = "Draft Meal Log";
         details = `${action.data.data?.name || 'Unknown'} (${action.data.data?.calories || 0} kcal)`;
         isDraft = true;
-      } else if (action.type === 'log_workout') {
-        title = "Draft Workout Log";
-        details = `${action.data.data?.activityType || 'Unknown'} - ${action.data.data?.duration || 0}m (${action.data.data?.calories || 0} kcal)`;
-        isDraft = true;
+      } else if (action.type === 'redirect_to_earn') {
+        title = "Log Workout";
+        details = `${action.data.data?.activityType || 'Workout'} - ${action.data.data?.duration || 0}m (${action.data.data?.calories || 0} kcal)`;
       } else if (action.type === 'update_user_info') {
         title = "Update Profile";
         details = JSON.stringify(action.data.data || {});
@@ -358,8 +388,12 @@ const PTCoach = {
           }
           
           <div style="display: flex; gap: 8px;">
-            <button onclick="PTCoach._approveAction('${action.id}', '${action.type}')" style="background: var(--accent); color: #000; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Approve</button>
-            <button onclick="PTCoach._rejectAction('${action.id}')" style="background: transparent; color: var(--text-secondary); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Reject</button>
+            ${action.type === 'redirect_to_earn'
+              ? `<button onclick="PTCoach._redirectToEarn('${action.id}', '${encodeURIComponent(JSON.stringify(action.data.data))}')" style="background: var(--accent); color: #000; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Take me there</button>
+                 <button onclick="PTCoach._rejectAction('${action.id}')" style="background: transparent; color: var(--text-secondary); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Not now</button>`
+              : `<button onclick="PTCoach._approveAction('${action.id}', '${action.type}')" style="background: var(--accent); color: #000; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Approve</button>
+                 <button onclick="PTCoach._rejectAction('${action.id}')" style="background: transparent; color: var(--text-secondary); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Reject</button>`
+            }
           </div>
         </div>
       `;
@@ -371,7 +405,10 @@ const PTCoach = {
 
   async _approveAction(actionId, type) {
     const card = document.getElementById(`pending-action-${actionId}`);
-    if (card) card.style.opacity = '0.5';
+    if (card) {
+      card.style.opacity = '0.5';
+      card.classList.remove('unresolved-action');
+    }
 
     if (type === 'request_media') {
       const fileInput = document.getElementById(`media-upload-${actionId}`);
@@ -404,15 +441,42 @@ const PTCoach = {
 
   async _rejectAction(actionId) {
     const card = document.getElementById(`pending-action-${actionId}`);
-    if (card) card.style.opacity = '0.5';
+    if (card) {
+      card.style.opacity = '0.5';
+      card.classList.remove('unresolved-action');
+    }
 
     try {
       await API.ptCoach.actionReject(this.conversationId, actionId);
       if (card) card.innerHTML = `<div style="font-size: 12px; color: var(--danger); margin-left: 2rem;">❌ Action Rejected</div>`;
-      this._sendMessage('I rejected your proposed action.');
     } catch (e) {
       if (card) card.style.opacity = '1';
       showToast('Failed to reject action', 'error');
+    }
+  },
+
+  _redirectToEarn(actionId, dataStr) {
+    const card = document.getElementById(`pending-action-${actionId}`);
+    if (card) {
+      card.style.opacity = '0.5';
+      card.classList.remove('unresolved-action');
+    }
+    
+    try {
+      const data = JSON.parse(decodeURIComponent(dataStr));
+      this.close();
+      App.navigateTo('earn');
+      setTimeout(() => {
+        if (typeof EarnPage !== 'undefined' && EarnPage.prefill) {
+          EarnPage.prefill(data);
+        }
+      }, 300);
+      
+      // We also mark it approved in the backend silently so it doesn't stay pending forever
+      API.ptCoach.actionApprove(this.conversationId, actionId).catch(console.error);
+    } catch (e) {
+      console.error(e);
+      if (card) card.style.opacity = '1';
     }
   },
 

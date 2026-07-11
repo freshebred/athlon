@@ -141,6 +141,23 @@ const EarnPage = {
     loading: false
   },
 
+  prefill(data) {
+    this.state = {
+      step: 'entry',
+      workout: {
+        activityType: data.activityType || 'Other',
+        duration: data.duration || 30,
+        intensity: data.intensity || 'moderate'
+      },
+      imageFile: null,
+      imageBase64: null,
+      calorieResult: null,
+      verifyResult: null,
+      loading: false
+    };
+    this.render();
+  },
+
   render() {
     const content = document.getElementById('tab-content');
     content.innerHTML = this._renderStep();

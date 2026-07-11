@@ -34,6 +34,14 @@ self.addEventListener('activate', (event) => {
           .map((name) => caches.delete(name))
       );
     }).then(() => self.clients.claim())
+    .then(() => self.clients.matchAll({ type: 'window' }))
+    .then((windowClients) => {
+      windowClients.forEach(client => {
+        if ('navigate' in client) {
+          client.navigate(client.url);
+        }
+      });
+    })
   );
 });
 

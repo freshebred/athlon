@@ -48,7 +48,7 @@ router.get('/today', requireAuth, async (req, res) => {
         id: w._id,
         activityType: w.activityType,
         duration: w.duration,
-        caloriesBurnt: w.finalCaloriesBurnt || w.caloriesBurnt,
+        caloriesBurnt: w.finalCaloriesBurnt ?? w.caloriesBurnt,
         loggedAt: w.loggedAt
       }))
     });

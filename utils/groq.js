@@ -75,7 +75,7 @@ Respond ONLY with valid JSON: {"safe": true} or {"safe": false, "reason": "brief
           content: `Classify this user input: "${text.substring(0, 500)}"`
         }
       ],
-      max_tokens: 64,
+      max_tokens: 256,
       temperature: 0
     });
 

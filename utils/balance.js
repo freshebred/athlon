@@ -85,6 +85,20 @@ async function reverseDeduction(userId, localDate, calories) {
 }
 
 /**
+ * Reverse a workout deduction (for edits/deletions)
+ */
+async function reverseWorkoutCalories(userId, localDate, calories) {
+  const balance = await DailyBalance.findOne({ userId, localDate });
+  if (balance) {
+    balance.caloriesBurnt = Math.max(0, balance.caloriesBurnt - calories);
+    balance.currentBalance = balance.openingBalance + balance.carryover - balance.caloriesConsumed + balance.caloriesBurnt;
+    balance.updatedAt = new Date();
+    await balance.save();
+  }
+  return balance;
+}
+
+/**
  * Get local date string from timezone
  */
 function getLocalDate(timezone) {
@@ -103,4 +117,4 @@ function getPreviousDate(localDate) {
   return d.toISOString().split('T')[0];
 }
 
-module.exports = { getTodayBalance, deductMealCalories, addWorkoutCalories, reverseDeduction, getLocalDate };
+module.exports = { getTodayBalance, deductMealCalories, addWorkoutCalories, reverseDeduction, reverseWorkoutCalories, getLocalDate };

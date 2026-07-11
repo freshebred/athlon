@@ -11,7 +11,7 @@ const DailyBalance = require('../models/DailyBalance');
 const User = require('../models/User');
 const ScheduledCheckIn = require('../models/ScheduledCheckIn');
 const { agentChat, agentChatWithTools, parseAIJson, checkUserInput } = require('../utils/groq');
-const { reverseDeduction, addWorkoutCalories, getLocalDate, deductMealCalories } = require('../utils/balance');
+const { reverseDeduction, addWorkoutCalories, getLocalDate, deductMealCalories, reverseWorkoutCalories } = require('../utils/balance');
 const { searchIngredient } = require('../utils/usda');
 
 const LEAK_PATTERNS = [
@@ -72,7 +72,7 @@ async function buildUserContext(userId, timezone) {
     ...recentMeals.map(m => `- [${m.localDate}] ${m.name}: ${m.totalCalories} kcal (ID: ${m._id})`),
     '',
     '### Recent Workouts (last 5)',
-    ...recentWorkouts.map(w => `- [${w.localDate}] ${w.activityType} ${w.duration}min: ${w.finalCaloriesBurnt || w.caloriesBurnt} kcal earned (ID: ${w._id})`),
+    ...recentWorkouts.map(w => `- [${w.localDate}] ${w.activityType} ${w.duration}min: ${w.finalCaloriesBurnt ?? w.caloriesBurnt} kcal earned (ID: ${w._id})`),
     '',
     '### PT Memory Notes (past resolutions)',
     ...recentConversations.map(c => `- [${c.sessionStartedAt?.toISOString().split('T')[0]}] ${c.context?.type}: ${c.memoryNote?.summary}`)
@@ -293,7 +293,7 @@ async function applyPendingAction(actionRecord, conversation, user) {
     const workout = await WorkoutLog.findOne({ _id: conversation.context.referenceId, userId: user._id });
     if (!workout) throw new Error('Workout not found');
     if (decision.caloriesAdjusted == null) throw new Error('No new calorie value provided');
-    const oldBurnt = workout.finalCaloriesBurnt || workout.caloriesBurnt;
+    const oldBurnt = workout.finalCaloriesBurnt ?? workout.caloriesBurnt;
     const diff = decision.caloriesAdjusted - oldBurnt;
     workout.ptAdjustment = diff;
     workout.finalCaloriesBurnt = decision.caloriesAdjusted;
@@ -301,7 +301,7 @@ async function applyPendingAction(actionRecord, conversation, user) {
     workout.ptConversationId = conversation._id;
     await workout.save();
     if (diff > 0) await addWorkoutCalories(user._id, workout.localDate, diff);
-    else if (diff < 0) await reverseDeduction(user._id, workout.localDate, Math.abs(diff));
+    else if (diff < 0) await reverseWorkoutCalories(user._id, workout.localDate, Math.abs(diff));
     return { action: 'workout_adjusted', oldCalories: oldBurnt, newCalories: decision.caloriesAdjusted };
   }
 
@@ -315,14 +315,8 @@ async function applyPendingAction(actionRecord, conversation, user) {
     return { action: 'food_logged' };
   }
 
-  if (type === 'log_workout') {
-    const workout = await WorkoutLog.findOne({ _id: decision.draftDocId });
-    if (workout) {
-      workout.status = 'approved';
-      await workout.save();
-    }
-    await addWorkoutCalories(user._id, localDate, workout.caloriesBurnt);
-    return { action: 'workout_logged' };
+  if (type === 'redirect_to_earn') {
+    return { action: 'redirected_to_earn' };
   }
 
   if (type === 'update_user_info') {
@@ -351,10 +345,25 @@ router.post('/chat', requireAuth, async (req, res) => {
 
     let conversation = conversationId ? await PTConversation.findOne({ _id: conversationId, userId: user._id }) : null;
     if (!conversation) {
-      conversation = new PTConversation({ userId: user._id, context: context || { type: 'general' }, messages: [] });
+      conversation = new PTConversation({
+        userId: user._id,
+        context: context || { type: 'general' },
+        messages: [{ role: 'user', content: message }]
+      });
+    } else {
+      // Auto-reject any stale pending actions when user continues chatting
+      for (const action of conversation.pendingActions) {
+        if (action.status === 'pending') {
+          action.status = 'rejected';
+          if (action.data && action.data.draftDocId) {
+            if (action.type === 'log_food') {
+              MealLog.updateOne({ _id: action.data.draftDocId }, { status: 'rejected' }).exec();
+            }
+          }
+        }
+      }
+      conversation.messages.push({ role: 'user', content: message });
     }
-
-    conversation.messages.push({ role: 'user', content: message });
     conversation.lastMessageAt = new Date();
 
     const userContext = await buildUserContext(user._id, user.profile?.timezone);
@@ -425,23 +434,8 @@ router.post('/chat', requireAuth, async (req, res) => {
         await meal.save();
         decision.draftDocId = meal._id;
         decision.draftDoc = meal.toObject();
-      } else if (decision.type === 'log_workout') {
-        const workout = new WorkoutLog({
-          userId: user._id,
-          activityType: decision.data.activityType,
-          duration: Number(decision.data.duration),
-          intensity: decision.data.intensity || 'moderate',
-          imageVerified: true, 
-          caloriesBurnt: Number(decision.data.calories),
-          finalCaloriesBurnt: Number(decision.data.calories),
-          localDate,
-          status: 'draft',
-          ai_generated: true,
-          ai_metadata: { decision }
-        });
-        await workout.save();
-        decision.draftDocId = workout._id;
-        decision.draftDoc = workout.toObject();
+      } else if (decision.type === 'redirect_to_earn') {
+        // No draft document needed, handled fully in client
       }
 
       conversation.pendingActions.push({
@@ -544,23 +538,8 @@ router.post('/start-dispute', requireAuth, async (req, res) => {
         await meal.save();
         decision.draftDocId = meal._id;
         decision.draftDoc = meal.toObject();
-      } else if (decision.type === 'log_workout') {
-        const workout = new WorkoutLog({
-          userId: user._id,
-          activityType: decision.data.activityType,
-          duration: Number(decision.data.duration),
-          intensity: decision.data.intensity || 'moderate',
-          imageVerified: true, 
-          caloriesBurnt: Number(decision.data.calories),
-          finalCaloriesBurnt: Number(decision.data.calories),
-          localDate,
-          status: 'draft',
-          ai_generated: true,
-          ai_metadata: { decision }
-        });
-        await workout.save();
-        decision.draftDocId = workout._id;
-        decision.draftDoc = workout.toObject();
+      } else if (decision.type === 'redirect_to_earn') {
+        // No draft document needed, handled fully in client
       }
 
       conversation.pendingActions.push({
@@ -637,8 +616,6 @@ router.post('/action/reject', requireAuth, async (req, res) => {
     if (actionRecord.data && actionRecord.data.draftDocId) {
       if (actionRecord.type === 'log_food') {
         await MealLog.updateOne({ _id: actionRecord.data.draftDocId }, { status: 'rejected' });
-      } else if (actionRecord.type === 'log_workout') {
-        await WorkoutLog.updateOne({ _id: actionRecord.data.draftDocId }, { status: 'rejected' });
       }
     }
     conversation.messages.push({ role: 'user', content: '[User rejected proposed action]' });

@@ -10,7 +10,23 @@ const App = {
       navigator.serviceWorker.register('/sw.js').catch(err => {
         console.warn('SW registration failed:', err);
       });
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
     }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        this.enforceVersion();
+      }
+    });
+
+    await this.enforceVersion();
 
     // Initialize icons
     if (window.lucide) lucide.createIcons();
@@ -27,6 +43,22 @@ const App = {
 
     // Check auth state
     await this.checkAuth();
+  },
+
+  async enforceVersion() {
+    try {
+      const v = await fetch('/api/version').then(r => r.json());
+      if (window.APP_VERSION && window.APP_VERSION !== v.version) {
+        // App is stale. Force reload.
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (let reg of regs) { await reg.unregister(); }
+        }
+        window.location.reload(true);
+      } else {
+        window.APP_VERSION = v.version;
+      }
+    } catch (e) {}
   },
 
   async checkAuth() {
