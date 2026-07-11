@@ -170,6 +170,9 @@ const PTCoach = {
             this._handleSeizure();
             return;
           }
+          if (data.errorFlags && data.errorFlags.includes("media_unavailable")) {
+            this._addBotMessage('<div class="media-error-card" style="margin-left:2rem; padding:8px; border:1px solid #ff4d4d; border-radius:4px; color:#ff4d4d; font-size:12px; margin-bottom:8px;">⚠️ Media unavailable. Max cannot process images at the moment.</div>');
+          }
           this._addBotMessage(msg);
           if (data.pendingActions && data.pendingActions.length) {
             this._renderPendingActions(data.pendingActions);
@@ -205,6 +208,10 @@ const PTCoach = {
       if (this._hasLeakedInternals(msg)) {
         this._handleSeizure();
         return;
+      }
+
+      if (data.errorFlags && data.errorFlags.includes("media_unavailable")) {
+        this._addBotMessage('<div class="media-error-card" style="margin-left:2rem; padding:8px; border:1px solid #ff4d4d; border-radius:4px; color:#ff4d4d; font-size:12px; margin-bottom:8px;">⚠️ Media unavailable. Max cannot process images at the moment.</div>');
       }
 
       this._addBotMessage(msg);
@@ -318,12 +325,16 @@ const PTCoach = {
       let title = "Max wants to modify your data";
       let details = "";
 
+      let isDraft = false;
+
       if (action.type === 'log_food') {
-        title = "Log Food";
+        title = "Draft Meal Log";
         details = `${action.data.data?.name || 'Unknown'} (${action.data.data?.calories || 0} kcal)`;
+        isDraft = true;
       } else if (action.type === 'log_workout') {
-        title = "Log Workout";
+        title = "Draft Workout Log";
         details = `${action.data.data?.activityType || 'Unknown'} - ${action.data.data?.duration || 0}m (${action.data.data?.calories || 0} kcal)`;
+        isDraft = true;
       } else if (action.type === 'update_user_info') {
         title = "Update Profile";
         details = JSON.stringify(action.data.data || {});
@@ -336,7 +347,8 @@ const PTCoach = {
       }
 
       msg.innerHTML = `
-        <div style="background: var(--bg-card); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-left: 2rem; width: 100%;">
+        <div style="background: ${isDraft ? 'rgba(0, 200, 83, 0.05)' : 'var(--bg-card)'}; padding: 12px; border-radius: 8px; border: ${isDraft ? '2px dashed var(--accent)' : '1px solid var(--border)'}; margin-left: 2rem; width: 100%;">
+          ${isDraft ? '<div style="font-size: 10px; color: var(--accent); font-weight: bold; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px;">📋 Pending Draft</div>' : ''}
           <div style="font-size: 13px; font-weight: bold; color: var(--text-primary); margin-bottom: 4px;">🛠️ ${this._esc(title)}</div>
           <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">${this._esc(details)}</div>
           

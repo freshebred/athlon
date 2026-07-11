@@ -236,10 +236,11 @@ async function agentChat(messages, systemPrompt, maxTokens = 2048, userEmail = '
  * Returns the complete message object (content, tool_calls, etc).
  */
 async function agentChatWithTools(messages, systemPrompt, tools, maxTokens = 2048, userEmail = 'unknown') {
+  const enforcedPrompt = systemPrompt + '\n\nCRITICAL INSTRUCTION: You must respond in strict JSON format. Your JSON must include a "reasoning_steps" array containing your step-by-step logic before any action or tool call. Schema: { "reasoning_steps": ["step 1", "step 2", ...], "message": "response to user", "action": { "type": "...", "data": {...} } }. You are NOT allowed to output plain text outside of this JSON block.';
   const payload = {
     model: MODELS.agent,
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: enforcedPrompt },
       ...messages
     ],
     tools,

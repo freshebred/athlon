@@ -17,6 +17,9 @@ const mealLogSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   name: { type: String, required: true },
   logType: { type: String, enum: ['ai_name', 'ai_image', 'manual'], required: true },
+  status: { type: String, enum: ['draft', 'approved', 'rejected'], default: 'draft' },
+  ai_generated: { type: Boolean, default: false },
+  ai_metadata: { type: Object, default: {} },
   imageUrl: String,             // base64 or path if uploaded via image
   ingredients: [ingredientSchema],
 

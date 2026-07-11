@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 
 const workoutLogSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  status: { type: String, enum: ['draft', 'approved', 'rejected'], default: 'draft' },
+  ai_generated: { type: Boolean, default: false },
+  ai_metadata: { type: Object, default: {} },
 
   // Workout details
   activityType: { type: String, required: true },   // 'Running', 'Weightlifting', etc.

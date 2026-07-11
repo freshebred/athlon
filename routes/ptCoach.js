@@ -191,9 +191,9 @@ async function executePTTool(toolCall, user, conversationId) {
       return JSON.stringify({ error: "Unsupported Capability", message: "Tell the user you do not have the capability to do that right now." });
     }
   } catch (err) {
-    return JSON.stringify({ error: err.message });
+    return JSON.stringify({ error: 'media_unavailable', details: err.message });
   }
-  return JSON.stringify({ error: 'Unknown tool' });
+  return JSON.stringify({ error: 'media_unavailable', details: 'Unknown tool' });
 }
 
 // ── Exported helpers ────────────────────────────────────────────────────────
@@ -300,35 +300,21 @@ async function applyPendingAction(actionRecord, conversation, user) {
   }
 
   if (type === 'log_food') {
-    const meal = new MealLog({
-      userId: user._id,
-      name: decision.data.name,
-      logType: 'manual',
-      ingredients: decision.data.ingredients || [],
-      totalCalories: decision.data.calories,
-      totalProtein: decision.data.protein || 0,
-      totalCarbs: decision.data.carbs || 0,
-      totalFat: decision.data.fat || 0,
-      aiVerdict: 'Logged by PT Coach',
-      localDate
-    });
-    await meal.save();
+    const meal = await MealLog.findOne({ _id: decision.draftDocId });
+    if (meal) {
+      meal.status = 'approved';
+      await meal.save();
+    }
     await deductMealCalories(user._id, localDate, decision.data.calories);
     return { action: 'food_logged' };
   }
 
   if (type === 'log_workout') {
-    const workout = new WorkoutLog({
-      userId: user._id,
-      activityType: decision.data.activityType,
-      duration: Number(decision.data.duration),
-      intensity: decision.data.intensity || 'moderate',
-      imageVerified: true, 
-      caloriesBurnt: Number(decision.data.calories),
-      finalCaloriesBurnt: Number(decision.data.calories),
-      localDate
-    });
-    await workout.save();
+    const workout = await WorkoutLog.findOne({ _id: decision.draftDocId });
+    if (workout) {
+      workout.status = 'approved';
+      await workout.save();
+    }
     await addWorkoutCalories(user._id, localDate, workout.caloriesBurnt);
     return { action: 'workout_logged' };
   }
@@ -379,6 +365,7 @@ router.post('/chat', requireAuth, async (req, res) => {
     let finalResponseText = '';
     let toolLoop = true;
     let uiToolCalls = [];
+    let toolErrors = [];
     while (toolLoop) {
       const response = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 1024);
       if (response.tool_calls && response.tool_calls.length > 0) {
@@ -388,6 +375,7 @@ router.post('/chat', requireAuth, async (req, res) => {
         for (const call of response.tool_calls) {
           uiToolCalls.push({ name: call.function.name, args: call.function.arguments });
           const result = await executePTTool(call, user, conversation._id);
+          if (result.includes('"media_unavailable"')) toolErrors.push("media_unavailable");
           const resultMsg = { role: 'tool', content: result, tool_call_id: call.id, name: call.function.name };
           historyMessages.push(resultMsg);
           conversation.messages.push(resultMsg);
@@ -411,6 +399,45 @@ router.post('/chat', requireAuth, async (req, res) => {
     conversation.messages.push({ role: 'assistant', content: userMessage });
 
     if (decision && decision.type !== 'none' && decision.type !== 'deny') {
+      const localDate = getLocalDate(user.profile?.timezone);
+      if (decision.type === 'log_food') {
+        const meal = new MealLog({
+          userId: user._id,
+          name: decision.data.name,
+          logType: 'manual',
+          ingredients: decision.data.ingredients || [],
+          totalCalories: decision.data.calories,
+          totalProtein: decision.data.protein || 0,
+          totalCarbs: decision.data.carbs || 0,
+          totalFat: decision.data.fat || 0,
+          aiVerdict: 'Logged by PT Coach',
+          localDate,
+          status: 'draft',
+          ai_generated: true,
+          ai_metadata: { decision }
+        });
+        await meal.save();
+        decision.draftDocId = meal._id;
+        decision.draftDoc = meal.toObject();
+      } else if (decision.type === 'log_workout') {
+        const workout = new WorkoutLog({
+          userId: user._id,
+          activityType: decision.data.activityType,
+          duration: Number(decision.data.duration),
+          intensity: decision.data.intensity || 'moderate',
+          imageVerified: true, 
+          caloriesBurnt: Number(decision.data.calories),
+          finalCaloriesBurnt: Number(decision.data.calories),
+          localDate,
+          status: 'draft',
+          ai_generated: true,
+          ai_metadata: { decision }
+        });
+        await workout.save();
+        decision.draftDocId = workout._id;
+        decision.draftDoc = workout.toObject();
+      }
+
       conversation.pendingActions.push({
         id: new mongoose.Types.ObjectId().toString(),
         type: decision.type,
@@ -430,9 +457,11 @@ router.post('/chat', requireAuth, async (req, res) => {
       conversationId: conversation._id,
       pendingActions: conversation.pendingActions.filter(p => p.status === 'pending'),
       uiToolCalls,
-      decision
+      decision,
+      errorFlags: toolErrors
     });
   } catch (err) {
+    console.error('[PT Coach /chat] Error:', err);
     res.status(500).json({ error: 'Failed to process PT Coach message.' });
   }
 });
@@ -463,6 +492,7 @@ router.post('/start-dispute', requireAuth, async (req, res) => {
     let finalResponseText = '';
     let toolLoop = true;
     let uiToolCalls = [];
+    let toolErrors = [];
     
     while (toolLoop) {
       const response = await agentChatWithTools(historyMessages, fullSystem, PT_TOOLS, 1024);
@@ -473,6 +503,7 @@ router.post('/start-dispute', requireAuth, async (req, res) => {
         for (const call of response.tool_calls) {
           uiToolCalls.push({ name: call.function.name, args: call.function.arguments });
           const result = await executePTTool(call, user, conversation._id);
+          if (result.includes('"media_unavailable"')) toolErrors.push("media_unavailable");
           const resultMsg = { role: 'tool', content: result, tool_call_id: call.id, name: call.function.name };
           historyMessages.push(resultMsg);
           conversation.messages.push(resultMsg);
@@ -487,6 +518,45 @@ router.post('/start-dispute', requireAuth, async (req, res) => {
     conversation.messages.push({ role: 'assistant', content: userMessage });
 
     if (decision && decision.type !== 'none' && decision.type !== 'deny') {
+      const localDate = getLocalDate(user.profile?.timezone);
+      if (decision.type === 'log_food') {
+        const meal = new MealLog({
+          userId: user._id,
+          name: decision.data.name,
+          logType: 'manual',
+          ingredients: decision.data.ingredients || [],
+          totalCalories: decision.data.calories,
+          totalProtein: decision.data.protein || 0,
+          totalCarbs: decision.data.carbs || 0,
+          totalFat: decision.data.fat || 0,
+          aiVerdict: 'Logged by PT Coach',
+          localDate,
+          status: 'draft',
+          ai_generated: true,
+          ai_metadata: { decision }
+        });
+        await meal.save();
+        decision.draftDocId = meal._id;
+        decision.draftDoc = meal.toObject();
+      } else if (decision.type === 'log_workout') {
+        const workout = new WorkoutLog({
+          userId: user._id,
+          activityType: decision.data.activityType,
+          duration: Number(decision.data.duration),
+          intensity: decision.data.intensity || 'moderate',
+          imageVerified: true, 
+          caloriesBurnt: Number(decision.data.calories),
+          finalCaloriesBurnt: Number(decision.data.calories),
+          localDate,
+          status: 'draft',
+          ai_generated: true,
+          ai_metadata: { decision }
+        });
+        await workout.save();
+        decision.draftDocId = workout._id;
+        decision.draftDoc = workout.toObject();
+      }
+
       conversation.pendingActions.push({
         id: new mongoose.Types.ObjectId().toString(),
         type: decision.type,
@@ -507,9 +577,11 @@ router.post('/start-dispute', requireAuth, async (req, res) => {
       conversationId: conversation._id,
       pendingActions: conversation.pendingActions.filter(p => p.status === 'pending'),
       uiToolCalls,
-      decision
+      decision,
+      errorFlags: toolErrors
     });
   } catch (err) {
+    console.error('[PT Coach /start-dispute] Error:', err);
     res.status(500).json({ error: 'Failed to start dispute conversation.' });
   }
 });
@@ -556,6 +628,13 @@ router.post('/action/reject', requireAuth, async (req, res) => {
     if (!actionRecord) return res.status(404).json({ error: 'Pending action not found or already processed' });
 
     actionRecord.status = 'rejected';
+    if (actionRecord.data && actionRecord.data.draftDocId) {
+      if (actionRecord.type === 'log_food') {
+        await MealLog.updateOne({ _id: actionRecord.data.draftDocId }, { status: 'rejected' });
+      } else if (actionRecord.type === 'log_workout') {
+        await WorkoutLog.updateOne({ _id: actionRecord.data.draftDocId }, { status: 'rejected' });
+      }
+    }
     conversation.messages.push({ role: 'user', content: '[User rejected proposed action]' });
     
     await conversation.save();
