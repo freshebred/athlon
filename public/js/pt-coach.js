@@ -171,6 +171,9 @@ const PTCoach = {
             return;
           }
           this._addBotMessage(msg);
+          if (data.pendingActions && data.pendingActions.length) {
+            this._renderPendingActions(data.pendingActions);
+          }
           this.conversationId = data.conversationId;
           sessionStorage.setItem('athlon_pt_conv', this.conversationId);
           this.pendingContext = null;
@@ -211,8 +214,8 @@ const PTCoach = {
         sessionStorage.setItem('athlon_pt_conv', this.conversationId);
       }
 
-      if (data.actionResult) {
-        this._handleActionResult(data.actionResult);
+      if (data.pendingActions && data.pendingActions.length) {
+        this._renderPendingActions(data.pendingActions);
       }
 
     } catch (err) {
@@ -273,22 +276,131 @@ const PTCoach = {
 
   // ── Action Results ─────────────────────────────────────────────────────────
   _handleActionResult(result) {
+    if (!result) return;
     switch (result.action) {
       case 'meal_deleted':
         showToast(`✓ Meal deleted. +${Math.round(result.caloriesRestored || 0)} cal restored.`, 'success', 4000);
-        App.refreshCurrentTab();
         break;
       case 'meal_edited':
+      case 'ingredient_edited':
         showToast(`✓ Meal updated: ${Math.round(result.oldCalories)} → ${Math.round(result.newCalories)} cal`, 'success', 4000);
-        App.refreshCurrentTab();
         break;
       case 'workout_adjusted':
         showToast(`✓ Workout updated: +${Math.round(result.newCalories)} cal earned`, 'success', 4000);
-        App.refreshCurrentTab();
+        break;
+      case 'food_logged':
+        showToast(`✓ Food logged successfully.`, 'success', 4000);
+        break;
+      case 'workout_logged':
+        showToast(`✓ Workout logged successfully.`, 'success', 4000);
+        break;
+      case 'user_info_updated':
+        showToast(`✓ Profile updated successfully.`, 'success', 4000);
         break;
       case 'denied':
         // No toast — Max already explained in chat
-        break;
+        return;
+    }
+    if (App && typeof App.refreshCurrentTab === 'function') {
+      App.refreshCurrentTab();
+    }
+  },
+
+  _renderPendingActions(actions) {
+    const container = document.getElementById('pt-messages');
+    if (!container) return;
+
+    actions.forEach(action => {
+      const msg = document.createElement('div');
+      msg.className = 'chat-message bot-message pending-action-card';
+      msg.id = `pending-action-${action.id}`;
+      
+      let title = "Max wants to modify your data";
+      let details = "";
+
+      if (action.type === 'log_food') {
+        title = "Log Food";
+        details = `${action.data.data?.name || 'Unknown'} (${action.data.data?.calories || 0} kcal)`;
+      } else if (action.type === 'log_workout') {
+        title = "Log Workout";
+        details = `${action.data.data?.activityType || 'Unknown'} - ${action.data.data?.duration || 0}m (${action.data.data?.calories || 0} kcal)`;
+      } else if (action.type === 'update_user_info') {
+        title = "Update Profile";
+        details = JSON.stringify(action.data.data || {});
+      } else if (action.type === 'request_media') {
+        title = "Media Request";
+        details = action.data.data?.reason || 'Upload a photo';
+      } else {
+        title = "Resolve Dispute";
+        details = action.type.replace(/_/g, ' ');
+      }
+
+      msg.innerHTML = `
+        <div style="background: var(--bg-card); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-left: 2rem; width: 100%;">
+          <div style="font-size: 13px; font-weight: bold; color: var(--text-primary); margin-bottom: 4px;">🛠️ ${this._esc(title)}</div>
+          <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">${this._esc(details)}</div>
+          
+          ${action.type === 'request_media' 
+            ? `<div style="margin-bottom: 8px;"><input type="file" id="media-upload-${action.id}" accept="image/*" style="font-size: 12px;" /></div>`
+            : ''
+          }
+          
+          <div style="display: flex; gap: 8px;">
+            <button onclick="PTCoach._approveAction('${action.id}', '${action.type}')" style="background: var(--accent); color: #000; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Approve</button>
+            <button onclick="PTCoach._rejectAction('${action.id}')" style="background: transparent; color: var(--text-secondary); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Reject</button>
+          </div>
+        </div>
+      `;
+      container.appendChild(msg);
+      requestAnimationFrame(() => msg.classList.add('message-in'));
+    });
+    this._scrollToBottom();
+  },
+
+  async _approveAction(actionId, type) {
+    const card = document.getElementById(`pending-action-${actionId}`);
+    if (card) card.style.opacity = '0.5';
+
+    if (type === 'request_media') {
+      const fileInput = document.getElementById(`media-upload-${actionId}`);
+      if (!fileInput || !fileInput.files[0]) {
+        showToast('Please select a file to upload.', 'error');
+        if (card) card.style.opacity = '1';
+        return;
+      }
+      // Note: We would implement actual media upload logic here. For now we simulate success.
+      // In a real app we'd use FormData and API.postForm.
+      showToast('Media uploaded! (Simulated)', 'success');
+      if (card) card.innerHTML = `<div style="font-size: 12px; color: var(--accent); margin-left: 2rem;">✅ Media Provided</div>`;
+      this._sendMessage('I have uploaded the media.');
+      return;
+    }
+    
+    try {
+      const res = await API.ptCoach.actionApprove(this.conversationId, actionId);
+      if (card) card.innerHTML = `<div style="font-size: 12px; color: var(--accent); margin-left: 2rem;">✅ Action Approved</div>`;
+      if (res.result) this._handleActionResult(res.result);
+      else {
+        showToast('✓ Action Approved', 'success');
+        if (App && typeof App.refreshCurrentTab === 'function') App.refreshCurrentTab();
+      }
+    } catch (e) {
+      if (card) card.style.opacity = '1';
+      showToast('Failed to approve action: ' + e.message, 'error');
+    }
+  },
+
+  async _rejectAction(actionId) {
+    const card = document.getElementById(`pending-action-${actionId}`);
+    if (card) card.style.opacity = '0.5';
+
+    try {
+      await API.ptCoach.actionReject(this.conversationId, actionId);
+      if (card) card.innerHTML = `<div style="font-size: 12px; color: var(--danger); margin-left: 2rem;">❌ Action Rejected</div>`;
+      this._sendMessage('I rejected your proposed action.');
+    } catch (e) {
+      if (card) card.style.opacity = '1';
+      showToast('Failed to reject action', 'error');
     }
   },
 

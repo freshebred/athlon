@@ -67,9 +67,12 @@ const API = {
   },
 
   ptCoach: {
+    conversations: ()      => API.get('/pt-coach/conversations'),
+    get:           id      => API.get(`/pt-coach/conversations/${id}`),
     chat:          (msg, cid, ctx) => API.post('/pt-coach/chat', { message: msg, conversationId: cid, context: ctx }),
-    startDispute:  d               => API.post('/pt-coach/start-dispute', d),
-    conversations: ()              => API.get('/pt-coach/conversations')
+    startDispute:  d       => API.post('/pt-coach/start-dispute', d),
+    actionApprove: (cid, aid) => API.post('/pt-coach/action/approve', { conversationId: cid, actionId: aid }),
+    actionReject:  (cid, aid) => API.post('/pt-coach/action/reject', { conversationId: cid, actionId: aid })
   },
 
   notifications: {

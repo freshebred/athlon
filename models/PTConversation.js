@@ -37,6 +37,15 @@ const ptConversationSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
   },
 
+  // Actions waiting for user approval
+  pendingActions: [{
+    id: { type: String, required: true }, // unique ID for the pending action
+    type: { type: String, required: true }, // e.g. 'logFood', 'approve_meal_edit', 'requestMedia'
+    data: { type: mongoose.Schema.Types.Mixed }, // payload of the action
+    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+  }],
+
   sessionStartedAt: { type: Date, default: Date.now },
   lastMessageAt: { type: Date, default: Date.now }
 }, { timestamps: true });

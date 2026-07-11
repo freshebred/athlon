@@ -202,8 +202,17 @@ describe('POST /api/pt-coach/chat — dispute actions: approve_meal_delete', () 
       .send({ message: 'This meal was logged by mistake!', conversationId: conv._id });
 
     expect(res.status).toBe(200);
-    expect(res.body.actionResult.action).toBe('meal_deleted');
-    expect(res.body.actionResult.caloriesRestored).toBe(400);
+    expect(res.body.pendingActions.length).toBe(1);
+    expect(res.body.pendingActions[0].type).toBe('approve_meal_delete');
+
+    const approveRes = await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
+
+    expect(approveRes.status).toBe(200);
+    expect(approveRes.body.result.action).toBe('meal_deleted');
+    expect(approveRes.body.result.caloriesRestored).toBe(400);
 
     // Verify meal is soft-deleted in DB
     const updated = await MealLog.findById(meal._id);
@@ -224,10 +233,15 @@ describe('POST /api/pt-coach/chat — dispute actions: approve_meal_delete', () 
 
     agentChatWithTools.mockResolvedValue({ content: JSON.stringify({ message: 'ok', action: { type: 'approve_meal_delete', approved: true, note: 'ok' } }) });
 
-    await request(app)
+    const res = await request(app)
       .post('/api/pt-coach/chat')
       .set(authHeader(user))
       .send({ message: 'Delete this!', conversationId: conv._id });
+
+    await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
 
     const updated = await DailyBalance.findOne({ userId: user._id });
     expect(updated.caloriesConsumed).toBe(0);
@@ -252,9 +266,18 @@ describe('POST /api/pt-coach/chat — dispute actions: approve_meal_edit', () =>
       .send({ message: 'I only had half a portion', conversationId: conv._id });
 
     expect(res.status).toBe(200);
-    expect(res.body.actionResult.action).toBe('meal_edited');
-    expect(res.body.actionResult.oldCalories).toBe(600);
-    expect(res.body.actionResult.newCalories).toBe(400);
+    expect(res.body.pendingActions.length).toBe(1);
+    expect(res.body.pendingActions[0].type).toBe('approve_meal_edit');
+
+    const approveRes = await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
+
+    expect(approveRes.status).toBe(200);
+    expect(approveRes.body.result.action).toBe('meal_edited');
+    expect(approveRes.body.result.oldCalories).toBe(600);
+    expect(approveRes.body.result.newCalories).toBe(400);
 
     const updated = await MealLog.findById(meal._id);
     expect(updated.totalCalories).toBe(400);
@@ -274,10 +297,15 @@ describe('POST /api/pt-coach/chat — dispute actions: approve_meal_edit', () =>
 
     agentChatWithTools.mockResolvedValue({ content: JSON.stringify({ message: 'ok', action: { type: 'approve_meal_edit', approved: true, caloriesAdjusted: 400, note: 'ok' } }) });
 
-    await request(app)
+    const res = await request(app)
       .post('/api/pt-coach/chat')
       .set(authHeader(user))
       .send({ message: 'Reduce it', conversationId: conv._id });
+
+    await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
 
     const updated = await DailyBalance.findOne({ userId: user._id });
     // Should have restored 200 calories (diff = 400-600 = -200)
@@ -298,8 +326,15 @@ describe('POST /api/pt-coach/chat — dispute actions: approve_meal_edit', () =>
       .send({ message: 'Edit please', conversationId: conv._id });
 
     expect(res.status).toBe(200);
-    expect(res.body.actionResult.action).toBe('error');
-    expect(res.body.actionResult.reason).toMatch(/no new calorie/i);
+    // Should still return pending action but the backend action handler should throw an error if no calories Adjust
+    expect(res.body.pendingActions.length).toBe(1);
+    
+    const approveRes = await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
+
+    expect(approveRes.status).toBe(500); // Because handlePTDecision throws an error on missing caloriesAdjusted now
   });
 });
 
@@ -320,9 +355,18 @@ describe('POST /api/pt-coach/chat — dispute actions: approve_workout_adjust', 
       .send({ message: 'I ran uphill, I burned more!', conversationId: conv._id });
 
     expect(res.status).toBe(200);
-    expect(res.body.actionResult.action).toBe('workout_adjusted');
-    expect(res.body.actionResult.oldCalories).toBe(270);
-    expect(res.body.actionResult.newCalories).toBe(350);
+    expect(res.body.pendingActions.length).toBe(1);
+    expect(res.body.pendingActions[0].type).toBe('approve_workout_adjust');
+
+    const approveRes = await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
+
+    expect(approveRes.status).toBe(200);
+    expect(approveRes.body.result.action).toBe('workout_adjusted');
+    expect(approveRes.body.result.oldCalories).toBe(270);
+    expect(approveRes.body.result.newCalories).toBe(350);
 
     const updated = await WorkoutLog.findById(workout._id);
     expect(updated.finalCaloriesBurnt).toBe(350);
@@ -342,10 +386,15 @@ describe('POST /api/pt-coach/chat — dispute actions: approve_workout_adjust', 
 
     agentChatWithTools.mockResolvedValue({ content: JSON.stringify({ message: 'ok', action: { type: 'approve_workout_adjust', approved: true, caloriesAdjusted: 300, note: 'ok' } }) });
 
-    await request(app)
+    const res = await request(app)
       .post('/api/pt-coach/chat')
       .set(authHeader(user))
       .send({ message: 'Give me more credit', conversationId: conv._id });
+
+    await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
 
     const updated = await DailyBalance.findOne({ userId: user._id });
     // diff = 300 - 200 = +100 extra calories credited
@@ -366,7 +415,14 @@ describe('POST /api/pt-coach/chat — dispute actions: approve_workout_adjust', 
       .send({ message: 'Adjust it', conversationId: conv._id });
 
     expect(res.status).toBe(200);
-    expect(res.body.actionResult?.action).toBe('error');
+    expect(res.body.pendingActions.length).toBe(1);
+
+    const approveRes = await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
+
+    expect(approveRes.status).toBe(500);
   });
 });
 
@@ -386,7 +442,8 @@ describe('POST /api/pt-coach/chat — dispute actions: deny', () => {
       .send({ message: 'Please delete this meal!', conversationId: conv._id });
 
     expect(res.status).toBe(200);
-    expect(res.body.actionResult.action).toBe('denied');
+    expect(res.body.decision.type).toBe('deny');
+    expect(res.body.pendingActions.length).toBe(0);
 
     // Meal should still be intact
     const meal2 = await MealLog.findById(meal._id);
@@ -706,10 +763,16 @@ describe('PT Coach — memory notes and resolution tracking', () => {
 
     agentChatWithTools.mockResolvedValue({ content: JSON.stringify({ message: 'ok', action: { type: 'approve_meal_delete', approved: true, note: 'Duplicate entry' } }) });
 
-    await request(app)
+    const res = await request(app)
       .post('/api/pt-coach/chat')
       .set(authHeader(user))
       .send({ message: 'It was a duplicate', conversationId: conv._id });
+
+    // Approve it
+    await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: res.body.pendingActions[0].id });
 
     const updated = await PTConversation.findById(conv._id);
     expect(updated.memoryNote).toBeDefined();
@@ -820,5 +883,79 @@ describe('POST /api/pt-coach/chat — leaked internals detection', () => {
     if (res.body.message) {
       expect(res.body.message).not.toMatch(/"USDA_search"/);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('POST /api/pt-coach/action/approve & reject', () => {
+  it('should approve a pending action and execute it', async () => {
+    const meal = await createMeal(user._id, { totalCalories: 600 });
+
+    const conv = await createPTConversation(user._id, {
+      context: { type: 'dispute_meal', referenceId: meal._id, referenceType: 'MealLog' }
+    });
+
+    // Add a pending action
+    conv.pendingActions.push({
+      id: 'test-action-id',
+      type: 'approve_meal_edit',
+      data: { type: 'approve_meal_edit', caloriesAdjusted: 400, note: 'ok' },
+      status: 'pending'
+    });
+    await conv.save();
+
+    const res = await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: 'test-action-id' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.result.action).toBe('meal_edited');
+
+    const updatedConv = await PTConversation.findById(conv._id);
+    expect(updatedConv.pendingActions[0].status).toBe('approved');
+
+    const updatedMeal = await MealLog.findById(meal._id);
+    expect(updatedMeal.totalCalories).toBe(400);
+  });
+
+  it('should reject a pending action', async () => {
+    const conv = await createPTConversation(user._id, {
+      context: { type: 'general' }
+    });
+
+    // Add a pending action
+    conv.pendingActions.push({
+      id: 'test-action-id-2',
+      type: 'log_food',
+      data: { type: 'log_food', data: { name: 'Apple', calories: 95 } },
+      status: 'pending'
+    });
+    await conv.save();
+
+    const res = await request(app)
+      .post('/api/pt-coach/action/reject')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: 'test-action-id-2' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    const updatedConv = await PTConversation.findById(conv._id);
+    expect(updatedConv.pendingActions[0].status).toBe('rejected');
+  });
+
+  it('should return 404 for invalid actionId', async () => {
+    const conv = await createPTConversation(user._id, {
+      context: { type: 'general' }
+    });
+
+    const res = await request(app)
+      .post('/api/pt-coach/action/approve')
+      .set(authHeader(user))
+      .send({ conversationId: conv._id, actionId: 'invalid-id' });
+
+    expect(res.status).toBe(404);
   });
 });

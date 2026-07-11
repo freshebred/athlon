@@ -47,18 +47,23 @@ const upload = multer({
 
 // ── System Prompts ──────────────────────────────────────────────────────────
 
-const WORKOUT_VERIFY_SYSTEM = `You are a strict fitness verification expert. Analyze the provided image very closely to determine the user's actual intent. Are they genuinely working out/exercising, or just pretending?
+const WORKOUT_VERIFY_SYSTEM = `You are a fitness activity verification assistant. Your job is to confirm that the photo is plausibly consistent with the stated workout — not to catch cheaters. Give the user the benefit of the doubt.
+
+Activity-specific guidelines (apply the one that matches the claimed activity):
+- **Gym / Weight training / Strength**: Accept if the photo shows a gym environment (equipment, weight racks, gym floor, locker room, etc.). The user doesn't need to be mid-rep.
+- **Swimming**: Accept if there is a swimming pool visible in the image (indoor or outdoor, public or private).
+- **Walking / Running / Jogging / Hiking**: Accept if the photo shows an outdoor environment (sidewalk, park, trail, road, nature) OR if the user is wearing running/athletic shoes outside. A landscape or street photo with no visible person is fine.
+- **Cycling / Biking**: Accept if there is a bike visible, or an outdoor/road environment consistent with cycling.
+- **Sports / Other cardio**: Accept any image that plausibly relates to outdoor activity or a sports venue.
+- **General**: When in doubt, approve. Only reject photos that are clearly irrelevant (e.g., a photo of food, a selfie indoors on a couch with no workout context whatsoever).
 
 Respond with ONLY a JSON object:
 {
   "isWorkedOut": true or false,
   "confidence": "high" or "medium" or "low",
-  "description": "Detailed description of what you see, focusing on signs of genuine effort",
+  "description": "Brief description of what you see in the image",
   "reason": "Why you approved or rejected this image"
-}
-
-Be very strict. Reject if there's any doubt about their intent. Signs of working out: gym equipment in use, workout clothes with visible effort/sweat, running/outdoor exercise in motion, sports activities. 
-Be highly skeptical of: sitting on a couch "claiming" to exercise, just standing near gym equipment without using it, selfies in mirrors without sweat, clearly staged photos. If rejected, provide a clear reason in 'reason'.`;
+}`;
 
 const CALORIES_BURNED_SYSTEM = `You are a fitness calorie calculation expert. Given a workout description, estimate calories burned.
 
@@ -136,9 +141,23 @@ router.post('/verify-image', requireAuth, upload.single('image'), async (req, re
     // ── 2. Analyze with Groq vision model via public URL (supports 20 MB) ─
     const { activityType } = req.body;
     const activityContext = activityType
-      ? `The user claims they performed: "${activityType}". Verify that the image is consistent with this activity. `
+      ? `The user logged a "${activityType}" workout. `
       : '';
-    const promptText = `${activityContext}Is this person working out or exercising? Does the image match the claimed activity? Analyze their intent very closely — are they genuinely exercising, or just posing/staging the photo? Respond with ONLY a JSON object: { "isWorkedOut": true or false, "confidence": "high" or "medium" or "low", "description": "Detailed description of what you see and how it matches or doesn't match the claimed activity", "reason": "Why you approved or rejected this as genuine workout proof" }`;
+    const activityHint = activityType
+      ? (() => {
+          const a = activityType.toLowerCase();
+          if (a.includes('gym') || a.includes('weight') || a.includes('strength') || a.includes('lift'))
+            return 'Accept if there is any gym equipment or gym environment visible.';
+          if (a.includes('swim'))
+            return 'Accept if there is a swimming pool visible anywhere in the image.';
+          if (a.includes('walk') || a.includes('run') || a.includes('jog') || a.includes('hike'))
+            return 'Accept if the photo shows an outdoor environment (street, park, trail, nature) or running/athletic shoes in an outdoor setting. A scenic outdoor photo with no person is fine.';
+          if (a.includes('cycl') || a.includes('bike') || a.includes('bicycl'))
+            return 'Accept if there is a bike visible or an outdoor/road environment consistent with cycling.';
+          return 'Accept if the image plausibly relates to physical activity or exercise in any way.';
+        })()
+      : 'Accept if the image plausibly relates to any physical activity or exercise.';
+    const promptText = `${activityContext}Does this photo reasonably match the claimed workout? ${activityHint} Only reject if the image is clearly unrelated to any exercise (e.g., a photo of food or an indoor couch selfie with zero workout context). Respond with ONLY a JSON object: { "isWorkedOut": true or false, "confidence": "high" or "medium" or "low", "description": "Brief description of what you see", "reason": "Why you approved or rejected this photo" }`;
     const verdict = await analyzeImageUrl(publicUrl, promptText, req.user?.email);
 
     // ── 4. Delete temp file immediately — Groq is done fetching it ────────
