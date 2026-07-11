@@ -34,7 +34,7 @@ function sanitiseAIResponse(text) {
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
     .replace(/\[TOOL_CALL\][\s\S]*?\[\/TOOL_CALL\]/gi, '')
     .replace(/```tool_code[\s\S]*?```/gi, '')
-    .replace(/\{[^{}]*"(USDA_search|searchUSDA|getRecentMeals|getRecentWorkouts|logFood)"[^{}]*\}/g, '')
+    .replace(/\{[^{}]*"(USDA_search|searchUSDA|getRecentMeals|getRecentWorkouts|getUserInformation|scheduleCheckIn|cancelCheckIn|getActiveCheckIns|reportUnsupportedCapability)"[^{}]*\}/g, '')
     .trim();
 }
 
@@ -174,12 +174,18 @@ async function executePTTool(toolCall, user, conversationId) {
       return JSON.stringify(user.profile);
     }
     if (name === 'scheduleCheckIn') {
+      if (args.hoursFromNow == null || !args.message) {
+        return JSON.stringify({ error: 'Missing required arguments: message, hoursFromNow' });
+      }
       const date = new Date(Date.now() + (args.hoursFromNow * 60 * 60 * 1000));
       const checkIn = new ScheduledCheckIn({ userId: user._id, message: args.message, scheduledFor: date, conversationId });
       await checkIn.save();
       return JSON.stringify({ success: true, checkInId: checkIn._id, scheduledFor: date });
     }
     if (name === 'cancelCheckIn') {
+      if (!args.checkInId) {
+        return JSON.stringify({ error: 'Missing required argument: checkInId' });
+      }
       await ScheduledCheckIn.deleteOne({ _id: args.checkInId, userId: user._id });
       return JSON.stringify({ success: true });
     }
