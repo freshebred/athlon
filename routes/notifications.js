@@ -35,7 +35,8 @@ router.post('/subscribe', requireAuth, async (req, res) => {
     user.notifications.subscription = subscription;
     if (appCommitId) {
       user.notifications.subscription.appCommitId = appCommitId;
-      user.notifications.subscription.updateNotified = false;
+      // Clear the notified version so if there's a pending update the user will be re-notified
+      user.notifications.subscription.notifiedVersion = null;
     }
     user.notifications.enabled = true;
 
@@ -262,9 +263,12 @@ router.post('/cron', async (req, res) => {
     for (const user of users) {
       const sub = user.notifications.subscription;
       
-      // Update check
+      // ── Update check ──────────────────────────────────────────────────────
+      // Fire once per new server version: notifiedVersion tracks which version
+      // we last sent a push for, so every fresh deploy triggers exactly one notification.
       if (sub.appCommitId && currentServerVersion !== 'athlon-unknown' && sub.appCommitId !== currentServerVersion) {
-        if (!sub.updateNotified) {
+        const alreadyNotifiedThisVersion = sub.notifiedVersion === currentServerVersion;
+        if (!alreadyNotifiedThisVersion) {
           try {
             await webpush.sendNotification(sub, JSON.stringify({
               title: 'Athlon Update Available! 🚀',
@@ -274,14 +278,15 @@ router.post('/cron', async (req, res) => {
               tag: 'app-update',
               data: { url: '/' }
             }));
-            sub.updateNotified = true;
+            sub.notifiedVersion = currentServerVersion;
+            user.markModified('notifications.subscription');
             await user.save();
             notificationsSent++;
           } catch (e) {
             console.error('[CRON] Failed to send update notification:', e.message);
           }
         }
-        // Skip normal reminders until they update
+        // Skip normal meal reminders until they open the app and update
         skipped++;
         continue;
       }

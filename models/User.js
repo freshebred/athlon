@@ -8,7 +8,9 @@ const pushSubscriptionSchema = new mongoose.Schema({
     auth: String
   },
   appCommitId: String,
-  updateNotified: { type: Boolean, default: false }
+  // Tracks which server version we last sent an update notification for.
+  // Replaces the old `updateNotified` boolean so each new deploy fires exactly once.
+  notifiedVersion: { type: String, default: null }
 }, { _id: false });
 
 const notificationTimeSchema = new mongoose.Schema({
