@@ -6,7 +6,9 @@ const pushSubscriptionSchema = new mongoose.Schema({
   keys: {
     p256dh: String,
     auth: String
-  }
+  },
+  appCommitId: String,
+  updateNotified: { type: Boolean, default: false }
 }, { _id: false });
 
 const notificationTimeSchema = new mongoose.Schema({

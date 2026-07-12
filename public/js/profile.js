@@ -295,16 +295,16 @@ const ProfilePage = {
     content.querySelector('#logout-btn')?.addEventListener('click', () => this._logout());
   },
 
-  async _enableNotifications() {
+  async _enableNotifications(silent = false) {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-      showToast('Push notifications not supported on this device', 'warning');
+      if (!silent) showToast('Push notifications not supported on this device', 'warning');
       return;
     }
 
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        showToast('Notification permission denied', 'warning');
+        if (!silent) showToast('Notification permission denied', 'warning');
         return;
       }
 
@@ -316,10 +316,10 @@ const ProfilePage = {
       });
 
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      await API.notifications.subscribe(subscription.toJSON(), tz);
-      showToast('Notifications enabled! 🔔', 'success');
+      await API.notifications.subscribe(subscription.toJSON(), tz, window.APP_VERSION || 'unknown');
+      if (!silent) showToast('Notifications enabled! 🔔', 'success');
     } catch (err) {
-      showToast('Failed to enable notifications: ' + (err.message || ''), 'error');
+      if (!silent) showToast('Failed to enable notifications: ' + (err.message || ''), 'error');
     }
   },
 

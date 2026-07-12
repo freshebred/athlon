@@ -77,7 +77,7 @@ const API = {
 
   notifications: {
     vapidKey:       () => API.get('/notifications/vapid-public-key'),
-    subscribe:   (sub, tz) => API.post('/notifications/subscribe', { subscription: sub, timezone: tz }),
+    subscribe:   (sub, tz, commitId) => API.post('/notifications/subscribe', { subscription: sub, timezone: tz, appCommitId: commitId }),
     unsubscribe:    () => API.post('/notifications/unsubscribe'),
     settings:       () => API.get('/notifications/settings'),
     updateSettings: d  => API.put('/notifications/settings', d),

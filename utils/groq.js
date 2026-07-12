@@ -6,8 +6,8 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 // Model constants
 const MODELS = {
   vision:    'qwen/qwen3.6-27b',
-  reasoning: 'openai/gpt-oss-120b',
-  agent:     'llama-3.3-70b-versatile',
+  reasoning: 'openai/gpt-oss-20b',
+  agent:     'groq/compund',
   safeguard: 'openai/gpt-oss-safeguard-20b'
 };
 

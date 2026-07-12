@@ -65,6 +65,20 @@ const App = {
     try {
       const { user, balance } = await API.auth.me();
       this.currentUser = user;
+      
+      // Handle push notification persistence/revokes
+      if (user.notifications?.enabled) {
+        if (Notification.permission === 'granted') {
+          // Silently resubscribe to ensure the subscription stays active across updates
+          if (typeof ProfilePage !== 'undefined' && ProfilePage._enableNotifications) {
+            ProfilePage._enableNotifications(true);
+          }
+        } else if (Notification.permission !== 'granted' && Notification.permission !== 'default') {
+          // They opted in via the DB, but their browser permission is revoked
+          showToast('Please allow browser notifications to continue receiving reminders.', 'warning', 6000);
+        }
+      }
+
       if (!user.onboardingComplete) {
         this.showOnboarding();
       } else {

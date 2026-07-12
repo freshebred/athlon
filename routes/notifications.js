@@ -25,7 +25,7 @@ router.get('/vapid-public-key', (req, res) => {
 // ── POST /api/notifications/subscribe ──────────────────────────────────────
 router.post('/subscribe', requireAuth, async (req, res) => {
   try {
-    const { subscription, timezone } = req.body;
+    const { subscription, timezone, appCommitId } = req.body;
 
     if (!subscription?.endpoint || !subscription?.keys) {
       return res.status(400).json({ error: 'Invalid push subscription' });
@@ -33,6 +33,10 @@ router.post('/subscribe', requireAuth, async (req, res) => {
 
     const user = req.user;
     user.notifications.subscription = subscription;
+    if (appCommitId) {
+      user.notifications.subscription.appCommitId = appCommitId;
+      user.notifications.subscription.updateNotified = false;
+    }
     user.notifications.enabled = true;
 
     if (timezone && user.profile) {
@@ -239,6 +243,14 @@ router.post('/cron', async (req, res) => {
 
   const startTime = Date.now();
   try {
+    let currentServerVersion = 'athlon-unknown';
+    try {
+      const { execSync } = require('child_process');
+      currentServerVersion = 'athlon-' + execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+    } catch (e) {
+      currentServerVersion = process.env.DEPLOY_VERSION || 'athlon-unknown';
+    }
+
     const users = await User.find({
       'notifications.enabled': true,
       'notifications.subscription.endpoint': { $exists: true }
@@ -248,6 +260,32 @@ router.post('/cron', async (req, res) => {
     let skipped = 0;
 
     for (const user of users) {
+      const sub = user.notifications.subscription;
+      
+      // Update check
+      if (sub.appCommitId && currentServerVersion !== 'athlon-unknown' && sub.appCommitId !== currentServerVersion) {
+        if (!sub.updateNotified) {
+          try {
+            await webpush.sendNotification(sub, JSON.stringify({
+              title: 'Athlon Update Available! 🚀',
+              body: 'There is a new update! Please open Athlon to install the new update.',
+              icon: '/icons/icon-192x192.png',
+              badge: '/icons/badge-72x72.png',
+              tag: 'app-update',
+              data: { url: '/' }
+            }));
+            sub.updateNotified = true;
+            await user.save();
+            notificationsSent++;
+          } catch (e) {
+            console.error('[CRON] Failed to send update notification:', e.message);
+          }
+        }
+        // Skip normal reminders until they update
+        skipped++;
+        continue;
+      }
+
       const timezone = user.profile?.timezone || 'America/Chicago';
       let localTime;
       try {
