@@ -263,18 +263,30 @@ async function agentChatWithTools(messages, systemPrompt, tools, maxTokens = 204
 }
 
 /**
+ * Strips JS-style comments from a JSON string, ignoring those inside strings.
+ */
+function stripJsonComments(jsonStr) {
+  if (!jsonStr) return jsonStr;
+  return jsonStr.replace(/"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (match, group1) => group1 ? "" : match);
+}
+
+/**
  * Parse JSON from AI response (handles markdown code blocks)
  */
 function parseAIJson(text) {
   try {
     const stripped = stripThinkingTags(text);
-    const cleaned = stripped.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    let cleaned = stripped.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    cleaned = stripJsonComments(cleaned);
     return JSON.parse(cleaned);
   } catch {
     const stripped = stripThinkingTags(text);
     const jsonMatch = stripped.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (jsonMatch) {
-      try { return JSON.parse(jsonMatch[0]); } catch { return null; }
+      try { 
+        const cleanedMatch = stripJsonComments(jsonMatch[0]);
+        return JSON.parse(cleanedMatch); 
+      } catch { return null; }
     }
     return null;
   }

@@ -165,7 +165,7 @@ const VERIFY_SYSTEM = `You are a calorie verification expert for a fitness track
    - For EACH flagged ingredient, propose a specific corrected amount OR corrected calories.
 3. EVALUATE the total — is it in a plausible range for this type of meal?
 
-IMPORTANT RESPONSE FORMAT — respond ONLY with valid JSON:
+IMPORTANT RESPONSE FORMAT — respond ONLY with valid JSON. DO NOT include any comments (like //) in your JSON output:
 {
   "reasonable": true or false,
   "verdict": "Human-readable verdict (1-3 sentences, friendly tone)",
@@ -175,9 +175,9 @@ IMPORTANT RESPONSE FORMAT — respond ONLY with valid JSON:
     {
       "name": "ingredient name",
       "issue": "brief description of the problem",
-      "suggestedAmount": 100, // MUST BE A NUMBER ONLY (e.g., 100, not "100g")
+      "suggestedAmount": 100,
       "suggestedAmountUnit": "g",
-      "suggestedCalories": 165, // MUST BE A NUMBER ONLY
+      "suggestedCalories": 165,
       "reason": "why this change makes sense"
     }
   ],
@@ -185,6 +185,7 @@ IMPORTANT RESPONSE FORMAT — respond ONLY with valid JSON:
   "mealNameNote": "Optional note if meal name seems wrong"
 }
 
+Note: "suggestedAmount" and "suggestedCalories" MUST BE A NUMBER ONLY (e.g., 100, not "100g").
 "flaggedIngredients" should be an empty array [] if everything looks correct.
 Keep the verdict friendly and encouraging — this is a fitness app, not a courtroom.`;
 
@@ -204,7 +205,7 @@ Your job is to:
 IMPORTANT: Be CHARITABLE. Most users are just being honest and trying to be accurate.
 Only flag manipulation if it's very clear (e.g., reducing 800-calorie burger to 50 calories).
 
-Respond ONLY with valid JSON:
+Respond ONLY with valid JSON. DO NOT include any comments (like //) in your JSON output:
 {
   "verdict": "approve" | "question" | "suggest_correction" | "flag_manipulation",
   "message": "Friendly message to show the user (1-3 sentences). If approving, be encouraging!",
@@ -212,14 +213,15 @@ Respond ONLY with valid JSON:
   "suggestedCorrections": [
     {
       "ingredientName": "name",
-      "suggestedAmount": number, // MUST BE A NUMBER ONLY (e.g., 5, not "5g")
+      "suggestedAmount": 5,
       "suggestedAmountUnit": "unit",
-      "suggestedCalories": number, // MUST BE A NUMBER ONLY
+      "suggestedCalories": 100,
       "reason": "brief reason"
     }
   ]
 }
 
+Note: "suggestedAmount" and "suggestedCalories" MUST BE A NUMBER ONLY (e.g., 5, not "5g").
 "suggestedCorrections" should be [] if no corrections needed.
 "canLog" is true for "approve", false for others unless the issue is minor.`;
 
