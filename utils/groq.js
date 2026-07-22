@@ -1,7 +1,11 @@
 require('dotenv').config();
 const Groq = require('groq-sdk');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY, maxRetries: 3 });
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+  fetch: typeof fetch !== 'undefined' ? fetch : undefined,
+  maxRetries: 3
+});
 
 // Model constants
 const MODELS = {
@@ -14,7 +18,7 @@ const MODELS = {
 /**
  * Helper to call Groq API with exponential backoff retries for transient stream/network errors.
  */
-async function callGroqWithRetry(fn, maxRetries = 3, initialDelayMs = 300) {
+async function callGroqWithRetry(fn, maxRetries = 4, initialDelayMs = 500) {
   let attempt = 0;
   while (true) {
     try {
