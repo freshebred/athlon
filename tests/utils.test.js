@@ -436,3 +436,48 @@ describe('utils/groq.js — parseAIJson', () => {
     expect(result).toHaveLength(2);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('utils/groq.js — callGroqWithRetry', () => {
+  const { callGroqWithRetry } = jest.requireActual('../utils/groq');
+
+  it('should return result on first successful attempt', async () => {
+    const mockFn = jest.fn().mockResolvedValue('success');
+    const result = await callGroqWithRetry(mockFn, 3, 10);
+    expect(result).toBe('success');
+    expect(mockFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('should retry transient ERR_STREAM_PREMATURE_CLOSE errors and succeed', async () => {
+    const err = new Error('Invalid response body while trying to fetch https://api.groq.com/openai/v1/chat/completions: Premature close');
+    err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+
+    const mockFn = jest.fn()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce('retry_success');
+
+    const result = await callGroqWithRetry(mockFn, 3, 10);
+    expect(result).toBe('retry_success');
+    expect(mockFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('should throw after exceeding max retries for transient error', async () => {
+    const err = new Error('Invalid response body while trying to fetch https://api.groq.com/openai/v1/chat/completions: Premature close');
+    err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+
+    const mockFn = jest.fn().mockRejectedValue(err);
+
+    await expect(callGroqWithRetry(mockFn, 2, 10)).rejects.toThrow('Premature close');
+    expect(mockFn).toHaveBeenCalledTimes(3); // initial attempt + 2 retries
+  });
+
+  it('should immediately throw non-transient errors without retrying', async () => {
+    const err = new Error('Invalid API key');
+    err.code = 'INVALID_API_KEY';
+
+    const mockFn = jest.fn().mockRejectedValue(err);
+
+    await expect(callGroqWithRetry(mockFn, 3, 10)).rejects.toThrow('Invalid API key');
+    expect(mockFn).toHaveBeenCalledTimes(1);
+  });
+});

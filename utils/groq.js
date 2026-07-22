@@ -1,7 +1,7 @@
 require('dotenv').config();
 const Groq = require('groq-sdk');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY, maxRetries: 3 });
 
 // Model constants
 const MODELS = {
@@ -10,6 +10,34 @@ const MODELS = {
   agent:     'llama-3.1-8b-instant',
   safeguard: 'openai/gpt-oss-safeguard-20b'
 };
+
+/**
+ * Helper to call Groq API with exponential backoff retries for transient stream/network errors.
+ */
+async function callGroqWithRetry(fn, maxRetries = 3, initialDelayMs = 300) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      const errStr = `${err.name || ''} ${err.code || ''} ${err.errno || ''} ${err.message || ''}`;
+      const isTransient =
+        err.code === 'ERR_STREAM_PREMATURE_CLOSE' ||
+        err.errno === 'ERR_STREAM_PREMATURE_CLOSE' ||
+        err.name === 'FetchError' ||
+        /Premature close|ECONNRESET|ETIMEDOUT|ENOTFOUND|network timeout|rate_limit_exceeded|500|502|503|504/i.test(errStr);
+
+      if (!isTransient || attempt > maxRetries) {
+        throw err;
+      }
+
+      const delay = initialDelayMs * Math.pow(2, attempt - 1);
+      console.warn(`[GROQ RETRY] Attempt ${attempt}/${maxRetries} failed: ${err.message}. Retrying in ${delay}ms...`);
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
+}
 
 // ── Discord Logging ────────────────────────────────────────────────────────
 async function logToDiscord(userEmail, systemPrompt, userPrompt, aiResponse) {
@@ -49,7 +77,7 @@ async function logToDiscord(userEmail, systemPrompt, userPrompt, aiResponse) {
  */
 async function checkUserInput(text) {
   try {
-    const response = await groq.chat.completions.create({
+    const response = await callGroqWithRetry(() => groq.chat.completions.create({
       model: MODELS.safeguard,
       messages: [
         {
@@ -77,7 +105,7 @@ Respond ONLY with valid JSON: {"safe": true} or {"safe": false, "reason": "brief
       ],
       max_tokens: 256,
       temperature: 0
-    });
+    }));
 
     const raw = response.choices[0]?.message?.content || '{"safe": true}';
     const result = parseAIJson(raw);
@@ -143,7 +171,7 @@ function stripThinkingTags(text) {
  * Call the vision model (llama-4-scout) with an image
  */
 async function analyzeImage(base64Image, mimeType, prompt, userEmail = 'unknown') {
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry(() => groq.chat.completions.create({
     model: MODELS.vision,
     messages: [{
       role: 'user',
@@ -154,7 +182,7 @@ async function analyzeImage(base64Image, mimeType, prompt, userEmail = 'unknown'
     }],
     max_tokens: 1024,
     temperature: 0.2
-  });
+  }));
   const raw = response.choices[0]?.message?.content || '';
   const content = stripThinkingTags(raw);
   logToDiscord(userEmail, 'Vision Prompt', prompt, content);
@@ -165,7 +193,7 @@ async function analyzeImage(base64Image, mimeType, prompt, userEmail = 'unknown'
  * Call the vision model with an image URL
  */
 async function analyzeImageUrl(url, prompt, userEmail = 'unknown') {
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry(() => groq.chat.completions.create({
     model: MODELS.vision,
     messages: [{
       role: 'user',
@@ -176,7 +204,7 @@ async function analyzeImageUrl(url, prompt, userEmail = 'unknown') {
     }],
     max_tokens: 1024,
     temperature: 0.2
-  });
+  }));
   const raw = response.choices[0]?.message?.content || '';
   const content = stripThinkingTags(raw);
   logToDiscord(userEmail, 'Vision Prompt', prompt, content);
@@ -187,7 +215,7 @@ async function analyzeImageUrl(url, prompt, userEmail = 'unknown') {
  * Call the reasoning model (gpt-oss-120b) for complex assessment tasks
  */
 async function reasoningChat(messages, systemPrompt, userEmail = 'unknown') {
-  const response = await groq.chat.completions.create({
+  const response = await callGroqWithRetry(() => groq.chat.completions.create({
     model: MODELS.reasoning,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -195,7 +223,7 @@ async function reasoningChat(messages, systemPrompt, userEmail = 'unknown') {
     ],
     max_tokens: 8192,
     temperature: 0.3
-  });
+  }));
   const content = response.choices[0]?.message?.content || '';
   const userPromptStr = messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n');
   logToDiscord(userEmail, systemPrompt, userPromptStr, content);
@@ -208,7 +236,7 @@ async function reasoningChat(messages, systemPrompt, userEmail = 'unknown') {
  */
 async function agentChat(messages, systemPrompt, maxTokens = 2048, userEmail = 'unknown') {
   const attemptChat = async () => {
-    const response = await groq.chat.completions.create({
+    const response = await callGroqWithRetry(() => groq.chat.completions.create({
       model: MODELS.agent,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -216,7 +244,7 @@ async function agentChat(messages, systemPrompt, maxTokens = 2048, userEmail = '
       ],
       max_tokens: maxTokens,
       temperature: 0.5
-    });
+    }));
     return response.choices[0]?.message?.content || '';
   };
 
@@ -248,7 +276,7 @@ async function agentChatWithTools(messages, systemPrompt, tools, maxTokens = 204
     max_tokens: maxTokens,
     temperature: 0.5
   };
-  const response = await groq.chat.completions.create(payload);
+  const response = await callGroqWithRetry(() => groq.chat.completions.create(payload));
   const msg = response.choices[0]?.message;
 
   // Sanitise the text content portion (not tool_calls themselves — those are legitimate)
@@ -295,6 +323,7 @@ function parseAIJson(text) {
 module.exports = {
   groq,
   MODELS,
+  callGroqWithRetry,
   analyzeImage,
   analyzeImageUrl,
   reasoningChat,
